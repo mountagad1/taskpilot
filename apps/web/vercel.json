@@ -1,0 +1,56 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cd ../.. && turbo build --filter=web",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "regions": ["iad1", "cdg1"],
+  "functions": {
+    "src/app/api/stripe/webhook/route.ts": {
+      "maxDuration": 30
+    },
+    "src/app/api/ai/process/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/export/route.ts": {
+      "maxDuration": 60,
+      "memory": 512
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, max-age=0" }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-XSS-Protection", "value": "1; mode=block" }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/chrome",
+      "destination": "https://chrome.google.com/webstore/detail/taskpilot/EXTENSION_ID",
+      "permanent": false
+    },
+    {
+      "source": "/pricing",
+      "destination": "/#pricing",
+      "permanent": false
+    }
+  ],
+  "env": {
+    "NEXT_PUBLIC_APP_URL": "https://taskpilot.cc"
+  }
+}

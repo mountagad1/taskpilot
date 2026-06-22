@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TaskPilot</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700&family=Space+Grotesk:wght@400;500;600&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #070711;
+      --bg2: #0d0d1a;
+      --surface: rgba(255,255,255,0.05);
+      --surface-hover: rgba(255,255,255,0.09);
+      --border: rgba(255,255,255,0.08);
+      --border-strong: rgba(255,255,255,0.15);
+      --fg: #f0f0ff;
+      --fg2: rgba(240,240,255,0.6);
+      --fg3: rgba(240,240,255,0.35);
+      --indigo: #6366f1;
+      --indigo-light: #818cf8;
+      --cyan: #22d3ee;
+      --green: #10b981;
+    }
+
+    html, body {
+      width: 360px;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ─── Header ─────────────────────────────── */
+    .header {
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg2);
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .logo-mark {
+      width: 26px; height: 26px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #6366f1, #22d3ee);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; color: white; font-weight: 700;
+    }
+    .logo-name {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--fg);
+    }
+    .status-badge {
+      display: flex; align-items: center; gap: 5px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11px; font-weight: 600;
+      font-family: 'Syne', sans-serif;
+      background: rgba(16,185,129,0.12);
+      border: 1px solid rgba(16,185,129,0.25);
+      color: #6ee7b7;
+    }
+    .pulse { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+
+    /* ─── Page Info ──────────────────────────── */
+    .page-info {
+      padding: 10px 16px;
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .page-info-icon {
+      width: 20px; height: 20px; border-radius: 4px;
+      background: var(--surface-hover);
+      display: flex; align-items: center; justify-content: center; font-size: 11px;
+      flex-shrink: 0;
+    }
+    .page-url {
+      font-size: 11px; color: var(--fg3);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* ─── Main Actions ────────────────────────── */
+    .actions {
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .action-btn {
+      display: flex; flex-direction: column; gap: 4px;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+      transition: all 0.15s;
+      text-align: left;
+    }
+    .action-btn:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-strong);
+      transform: translateY(-1px);
+    }
+    .action-btn.primary {
+      grid-column: span 2;
+      flex-direction: row; align-items: center; gap: 10px;
+      background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(34,211,238,0.08));
+      border-color: rgba(99,102,241,0.3);
+    }
+    .action-btn.primary:hover {
+      background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(34,211,238,0.12));
+    }
+    .action-icon {
+      font-size: 18px; line-height: 1;
+    }
+    .action-primary-icon {
+      width: 36px; height: 36px; border-radius: 9px;
+      background: linear-gradient(135deg, #6366f1, #22d3ee);
+      display: flex; align-items: center; justify-content: center; font-size: 16px;
+      flex-shrink: 0;
+    }
+    .action-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 600; font-size: 12px;
+      color: var(--fg);
+    }
+    .action-desc {
+      font-size: 11px; color: var(--fg3);
+    }
+
+    /* ─── AI Input ───────────────────────────── */
+    .ai-input-section {
+      padding: 0 12px 12px;
+    }
+    .ai-input-wrapper {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      transition: border-color 0.15s;
+    }
+    .ai-input-wrapper:focus-within {
+      border-color: rgba(99,102,241,0.5);
+      background: rgba(99,102,241,0.05);
+    }
+    .ai-input {
+      flex: 1; background: transparent; border: none; outline: none;
+      color: var(--fg); font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+    }
+    .ai-input::placeholder { color: var(--fg3); }
+    .ai-send-btn {
+      width: 26px; height: 26px; border-radius: 7px;
+      background: linear-gradient(135deg, #6366f1, #22d3ee);
+      border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; color: white;
+      transition: opacity 0.15s;
+      flex-shrink: 0;
+    }
+    .ai-send-btn:hover { opacity: 0.85; }
+
+    /* ─── Recent ─────────────────────────────── */
+    .section-label {
+      padding: 6px 16px 6px;
+      font-size: 10px; font-weight: 700;
+      font-family: 'Syne', sans-serif;
+      letter-spacing: 0.08em;
+      color: var(--fg3);
+      text-transform: uppercase;
+    }
+    .recent-list { padding: 0 12px 8px; display: flex; flex-direction: column; gap: 2px; }
+    .recent-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 8px;
+      cursor: pointer; transition: background 0.12s;
+    }
+    .recent-item:hover { background: var(--surface-hover); }
+    .recent-icon { font-size: 13px; width: 18px; text-align: center; flex-shrink: 0; }
+    .recent-text { flex: 1; font-size: 12px; color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .recent-time { font-size: 10px; color: var(--fg3); flex-shrink: 0; }
+
+    /* ─── Footer ─────────────────────────────── */
+    .footer {
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .footer-link {
+      font-size: 11px; color: var(--fg3);
+      text-decoration: none; cursor: pointer;
+      transition: color 0.12s;
+    }
+    .footer-link:hover { color: var(--indigo-light); }
+    .footer-plan {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 11px; font-family: 'Syne', sans-serif; font-weight: 600;
+      color: var(--indigo-light);
+    }
+    .upgrade-link {
+      font-size: 11px; font-weight: 600;
+      font-family: 'Syne', sans-serif;
+      color: var(--indigo-light); cursor: pointer;
+      transition: color 0.12s;
+    }
+    .upgrade-link:hover { color: var(--cyan); }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-mark">✦</div>
+      <span class="logo-name">TaskPilot</span>
+    </div>
+    <div class="status-badge">
+      <div class="pulse"></div>
+      Active
+    </div>
+  </div>
+
+  <!-- Page Info -->
+  <div class="page-info">
+    <div class="page-info-icon">🌐</div>
+    <span class="page-url" id="pageUrl">Loading page info...</span>
+  </div>
+
+  <!-- Main Actions -->
+  <div class="actions">
+    <button class="action-btn primary" id="smartPasteBtn">
+      <div class="action-primary-icon">⚡</div>
+      <div>
+        <div class="action-title">Smart Paste</div>
+        <div class="action-desc">Autofill form from clipboard · Alt+V</div>
+      </div>
+    </button>
+
+    <button class="action-btn" id="summarizeBtn">
+      <span class="action-icon">📄</span>
+      <div class="action-title">Summarize</div>
+      <div class="action-desc">Summarize page</div>
+    </button>
+
+    <button class="action-btn" id="extractBtn">
+      <span class="action-icon">📊</span>
+      <div class="action-title">Extract Data</div>
+      <div class="action-desc">Emails, prices, links</div>
+    </button>
+
+    <button class="action-btn" id="replyBtn">
+      <span class="action-icon">✍️</span>
+      <div class="action-title">AI Reply</div>
+      <div class="action-desc">Generate response</div>
+    </button>
+
+    <button class="action-btn" id="exportBtn">
+      <span class="action-icon">⬇️</span>
+      <div class="action-title">Export</div>
+      <div class="action-desc">CSV / Excel / PDF</div>
+    </button>
+  </div>
+
+  <!-- AI Input -->
+  <div class="ai-input-section">
+    <div class="ai-input-wrapper">
+      <span style="font-size:13px;color:var(--fg3)">✦</span>
+      <input class="ai-input" id="aiInput" placeholder="Ask anything about this page..." />
+      <button class="ai-send-btn" id="sendBtn">→</button>
+    </div>
+  </div>
+
+  <!-- Recent -->
+  <div class="section-label">Recent</div>
+  <div class="recent-list" id="recentList">
+    <div class="recent-item">
+      <span class="recent-icon">⚡</span>
+      <span class="recent-text">Smart Paste — HubSpot form</span>
+      <span class="recent-time">2m ago</span>
+    </div>
+    <div class="recent-item">
+      <span class="recent-icon">📄</span>
+      <span class="recent-text">Summarized TechCrunch article</span>
+      <span class="recent-time">15m ago</span>
+    </div>
+    <div class="recent-item">
+      <span class="recent-icon">📊</span>
+      <span class="recent-text">Extracted 24 emails from LinkedIn</span>
+      <span class="recent-time">1h ago</span>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <span class="footer-plan">✦ Free Plan</span>
+    <span class="upgrade-link" id="upgradeLink">Upgrade to Pro →</span>
+    <a class="footer-link" id="settingsLink">Settings</a>
+  </div>
+
+  <script>
+    // ─── Load current tab URL ─────────────────
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const url = tabs[0]?.url || ''
+      try {
+        document.getElementById('pageUrl').textContent = new URL(url).hostname
+      } catch {
+        document.getElementById('pageUrl').textContent = url.substring(0, 50)
+      }
+    })
+
+    // ─── Smart Paste ──────────────────────────
+    document.getElementById('smartPasteBtn').addEventListener('click', () => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'SMART_PASTE' })
+        window.close()
+      })
+    })
+
+    // ─── Open Sidebar ─────────────────────────
+    const sidebarActions = ['summarizeBtn', 'extractBtn', 'replyBtn', 'exportBtn']
+    const sidebarTasks = { summarizeBtn: 'summarize', extractBtn: 'extract_data', replyBtn: 'generate_reply', exportBtn: 'export' }
+
+    sidebarActions.forEach(id => {
+      document.getElementById(id)?.addEventListener('click', () => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          chrome.tabs.sendMessage(tabs[0].id, { type: 'OPEN_SIDEBAR', task: sidebarTasks[id] })
+          window.close()
+        })
+      })
+    })
+
+    // ─── AI Input ─────────────────────────────
+    const sendQuery = () => {
+      const query = document.getElementById('aiInput').value.trim()
+      if (!query) return
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'OPEN_SIDEBAR', task: 'custom', userInput: query })
+        window.close()
+      })
+    }
+
+    document.getElementById('sendBtn').addEventListener('click', sendQuery)
+    document.getElementById('aiInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendQuery()
+    })
+
+    // ─── Links ────────────────────────────────
+    document.getElementById('upgradeLink').addEventListener('click', () => {
+      chrome.tabs.create({ url: 'https://taskpilot.cc/pricing' })
+    })
+
+    document.getElementById('settingsLink').addEventListener('click', () => {
+      chrome.runtime.openOptionsPage?.()
+    })
+  </script>
+</body>
+</html>

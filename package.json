@@ -1,0 +1,37 @@
+{
+  "name": "taskpilot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TaskPilot — The AI Operating Layer for the Browser",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "build:web": "turbo run build --filter=@taskpilot/web",
+    "build:extension": "turbo run build --filter=@taskpilot/extension",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:push": "cd supabase && supabase db push",
+    "db:migrate": "cd supabase && supabase migration up",
+    "db:generate": "cd supabase && supabase gen types typescript --local > packages/shared/src/types/database.ts",
+    "deploy:web": "turbo run build --filter=@taskpilot/web && vercel --prod",
+    "release:extension": "turbo run build --filter=@taskpilot/extension && node scripts/package-extension.js"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.0"
+  },
+"packageManager": "pnpm@11.5.2",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

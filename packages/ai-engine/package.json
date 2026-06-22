@@ -1,0 +1,20 @@
+{
+  "name": "@taskpilot/ai-engine",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./cache": "./src/cache/semantic-cache.ts",
+    "./orchestrator": "./src/orchestrator/index.ts",
+    "./optimizer": "./src/optimizer/token-optimizer.ts",
+    "./tools": "./src/tools/tool-registry.ts"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.28.0",
+    "@taskpilot/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}

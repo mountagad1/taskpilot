@@ -1,0 +1,113 @@
+{
+  "manifest_version": 3,
+  "name": "TaskPilot — AI for Every Webpage",
+  "short_name": "TaskPilot",
+  "version": "1.0.0",
+  "description": "Talk to any webpage instantly. Autofill forms, extract data, automate browser workflows with AI.",
+  
+  "icons": {
+    "16": "assets/icon16.png",
+    "32": "assets/icon32.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "32": "assets/icon32.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    },
+    "default_title": "TaskPilot AI"
+  },
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+
+  "permissions": [
+    "storage",
+    "clipboardRead",
+    "clipboardWrite",
+    "activeTab",
+    "scripting",
+    "contextMenus",
+    "alarms"
+  ],
+
+  "host_permissions": [
+    "https://*.taskpilot.cc/*"
+  ],
+
+  "optional_permissions": [
+    "tabs",
+    "history"
+  ],
+
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.taskpilot.cc https://*.supabase.co"
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/*",
+        "content.css",
+        "sidebar.html"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+T",
+        "mac": "Option+T"
+      },
+      "description": "Open TaskPilot"
+    },
+    "smart-paste": {
+      "suggested_key": {
+        "default": "Alt+V",
+        "mac": "Option+V"
+      },
+      "description": "Smart Paste from clipboard"
+    },
+    "open-sidebar": {
+      "suggested_key": {
+        "default": "Alt+S",
+        "mac": "Option+S"
+      },
+      "description": "Toggle AI Sidebar"
+    },
+    "command-palette": {
+      "suggested_key": {
+        "default": "Alt+K",
+        "mac": "Option+K"
+      },
+      "description": "Open Command Palette"
+    }
+  },
+
+  "options_page": "options.html",
+
+  "minimum_chrome_version": "116"
+}
