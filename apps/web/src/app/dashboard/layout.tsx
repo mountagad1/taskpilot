@@ -7,7 +7,12 @@ import { useRouter } from 'next/navigation'
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Overview', icon: '⬡' },
-  { href: '/dashboard/workflows', label: 'Workflows', icon: '⚡' },
+  // ── Product ──
+  { href: '/dashboard/smart-paste', label: 'Smart Paste', icon: '⚡' },
+  { href: '/dashboard/sidebar', label: 'AI Sidebar', icon: '✦' },
+  { href: '/dashboard/actions', label: 'Browser Actions', icon: '⚙' },
+  // ── Manage ──
+  { href: '/dashboard/workflows', label: 'Workflows', icon: '◇' },
   { href: '/dashboard/analytics', label: 'Analytics', icon: '📊' },
   { href: '/dashboard/integrations', label: 'Integrations', icon: '🔗' },
   { href: '/dashboard/settings', label: 'Settings', icon: '⚙' },

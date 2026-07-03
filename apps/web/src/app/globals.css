@@ -354,3 +354,16 @@ pre {
     scrollbar-width: none;
   }
 }
+
+/* ─── Product page loading skeleton (Smart Paste / Sidebar / Actions) ── */
+@keyframes tp-shimmer {
+  0%   { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tp-skeleton {
+    animation: none !important;
+    background: var(--surface-hover) !important;
+  }
+}
