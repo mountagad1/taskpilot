@@ -17,7 +17,11 @@ const nextConfig = {
 
   // Experimental features
   experimental: {
-    serverComponentsExternalPackages: ['@supabase/supabase-js'],
+    serverComponentsExternalPackages: [
+      '@supabase/supabase-js',
+      '@supabase/auth-helpers-nextjs',
+      '@supabase/auth-helpers-shared',
+    ],
   },
 
   // Webpack config for monorepo
