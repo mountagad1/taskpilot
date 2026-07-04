@@ -122,6 +122,7 @@ export default function WorkflowsPage() {
                             color: 'var(--indigo-light)',
                             border: '1px solid rgba(99,102,241,0.2)',
                             fontFamily: 'var(--font-heading)',
+                            fontWeight: 600,
                           }}
                         >
                           {tag}

@@ -137,6 +137,7 @@ export default function IntegrationsPage() {
                       background: 'var(--surface-hover)',
                       color: 'var(--foreground-tertiary)',
                       fontFamily: 'var(--font-heading)',
+                      fontWeight: 600,
                       fontSize: '10px',
                     }}
                   >

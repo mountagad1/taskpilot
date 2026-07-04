@@ -306,7 +306,7 @@ export default function BrowserActionsPage() {
                             : 'none',
                       }}
                     >
-                      <td className="px-5 py-3 font-heading text-foreground">{a.name}</td>
+                      <td className="px-5 py-3 font-heading font-semibold text-foreground">{a.name}</td>
                       <td className="px-5 py-3 font-mono" style={{ color: 'var(--foreground-tertiary)' }}>
                         {a.trigger}
                       </td>

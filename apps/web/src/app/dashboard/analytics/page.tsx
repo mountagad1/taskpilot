@@ -120,7 +120,7 @@ export default function AnalyticsPage() {
             {TASK_BREAKDOWN.map((item, i) => (
               <div key={i}>
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-heading text-foreground">{item.task}</p>
+                  <p className="text-xs font-heading font-semibold text-foreground">{item.task}</p>
                   <p className="text-xs font-mono" style={{ color: 'var(--foreground-secondary)' }}>
                     {item.count}
                   </p>
@@ -170,7 +170,7 @@ export default function AnalyticsPage() {
                   key={i}
                   style={{ borderBottom: i < MOCK_DAILY.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}
                 >
-                  <td className="px-6 py-3 font-heading text-foreground">{d.day}</td>
+                  <td className="px-6 py-3 font-heading font-semibold text-foreground">{d.day}</td>
                   <td className="px-6 py-3 font-mono text-foreground">{d.actions}</td>
                   <td className="px-6 py-3 font-mono text-foreground">{d.tokens.toLocaleString()}</td>
                   <td className="px-6 py-3 font-mono text-foreground">${d.cost.toFixed(3)}</td>

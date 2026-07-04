@@ -367,7 +367,7 @@ export default function SidebarPage() {
           {turns.length > 0 && (
             <button
               onClick={() => setTurns([])}
-              className="w-full px-3 py-2 rounded-lg text-xs font-heading transition-all"
+              className="w-full px-3 py-2 rounded-lg text-xs font-heading font-semibold transition-all"
               style={{
                 background: 'transparent',
                 border: '1px solid var(--border)',

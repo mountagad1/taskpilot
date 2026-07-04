@@ -179,7 +179,7 @@ export default function SmartPastePage() {
                   setResult(null)
                   setError(null)
                 }}
-                className="px-4 py-2 rounded-lg text-sm font-heading transition-all"
+                className="px-4 py-2 rounded-lg text-sm font-heading font-semibold transition-all"
                 style={{
                   background: 'transparent',
                   border: '1px solid var(--border)',

@@ -84,7 +84,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Link
             href="/dashboard/settings"
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all hover:bg-surface"
-            style={{ color: 'var(--foreground-secondary)', fontFamily: 'var(--font-heading)' }}
+            style={{ color: 'var(--foreground-secondary)', fontFamily: 'var(--font-heading)', fontWeight: 500 }}
           >
             <span className="w-5 text-center">💎</span>
             Upgrade to Pro
@@ -92,7 +92,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <button
             onClick={handleSignOut}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all hover:bg-surface"
-            style={{ color: 'var(--foreground-tertiary)', fontFamily: 'var(--font-heading)' }}
+            style={{ color: 'var(--foreground-tertiary)', fontFamily: 'var(--font-heading)', fontWeight: 500 }}
           >
             <span className="w-5 text-center">↩</span>
             Sign out
