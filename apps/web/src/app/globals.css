@@ -40,10 +40,11 @@
   --warning: #f59e0b;
   --error: #ef4444;
 
-  /* Fonts */
-  --font-heading: var(--font-syne), system-ui, sans-serif;
-  --font-body: var(--font-space), system-ui, sans-serif;
-  --font-code: var(--font-mono), 'Courier New', monospace;
+  /* Fonts — next/font variables first (self-hosted, no FOUT), then the
+     Google Fonts stylesheet families loaded in layout.tsx as fallback. */
+  --font-heading: var(--font-syne), 'Syne', system-ui, sans-serif;
+  --font-body: var(--font-space), 'Space Grotesk', system-ui, sans-serif;
+  --font-code: var(--font-mono), 'JetBrains Mono', 'Courier New', monospace;
 
   /* Radii */
   --radius-sm: 6px;
