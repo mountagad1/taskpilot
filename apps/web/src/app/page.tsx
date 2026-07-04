@@ -5,8 +5,8 @@
 
 "use client";
 
-import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import { useRef, useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Zap, Chrome, ArrowRight, Check, Star, Terminal,
@@ -344,11 +344,6 @@ stripe.com`;
 // ─── MAIN PAGE ───────────────────────────────────────────────
 
 export default function LandingPage() {
-  const heroRef = useRef<HTMLElement>(null);
-  const { scrollYProgress } = useScroll({ target: heroRef });
-  const heroOpacity = useTransform(scrollYProgress, [0, 0.6], [1, 0]);
-  const heroY = useTransform(scrollYProgress, [0, 0.6], [0, -40]);
-
   const [annualBilling, setAnnualBilling] = useState(false);
 
   return (
@@ -1036,11 +1031,7 @@ export default function LandingPage() {
       </nav>
 
       {/* ── HERO ── */}
-      <motion.section
-        ref={heroRef}
-        className="tp-hero"
-        style={{ opacity: heroOpacity, y: heroY }}
-      >
+      <motion.section className="tp-hero">
         <div className="tp-hero-glow" />
         <div className="tp-hero-glow-2" />
 
