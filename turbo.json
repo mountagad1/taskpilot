@@ -4,7 +4,33 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**", "build/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "build/**"],
+      "env": [
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "OPENAI_API_KEY",
+        "STRIPE_SECRET_KEY",
+        "STRIPE_WEBHOOK_SECRET",
+        "STRIPE_PRICE_PRO_MONTHLY",
+        "STRIPE_PRICE_PRO_ANNUAL",
+        "STRIPE_PRICE_ENTERPRISE_MONTHLY",
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+        "UPSTASH_REDIS_REST_URL",
+        "UPSTASH_REDIS_REST_TOKEN",
+        "NEXT_PUBLIC_POSTHOG_KEY",
+        "NEXT_PUBLIC_POSTHOG_HOST",
+        "NEXT_PUBLIC_APP_URL",
+        "NEXT_PUBLIC_APP_NAME",
+        "NEXT_PUBLIC_EXTENSION_ID",
+        "RESEND_API_KEY",
+        "EMAIL_FROM",
+        "TRIGGER_API_KEY",
+        "TRIGGER_API_URL",
+        "RATE_LIMIT_SMART_PASTE",
+        "RATE_LIMIT_PROCESS",
+        "RATE_LIMIT_AUTH"
+      ]
     },
     "dev": {
       "cache": false,

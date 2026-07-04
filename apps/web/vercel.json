@@ -3,7 +3,6 @@
   "buildCommand": "cd ../.. && turbo build --filter=@taskpilot/web",
   "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
   "framework": "nextjs",
-  "regions": ["iad1", "cdg1"],
   "functions": {
     "src/app/api/stripe/webhook/route.ts": {
       "maxDuration": 30
