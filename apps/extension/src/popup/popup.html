@@ -304,8 +304,9 @@
 
   <!-- Footer -->
   <div class="footer">
-    <span class="footer-plan">✦ Free Plan</span>
+    <span class="footer-plan" id="planLabel">✦ Free Plan</span>
     <span class="upgrade-link" id="upgradeLink">Upgrade to Pro →</span>
+    <a class="footer-link" id="signInLink" style="display:none">Sign in</a>
     <a class="footer-link" id="settingsLink">Settings</a>
   </div>
 
@@ -335,7 +336,7 @@
     sidebarActions.forEach(id => {
       document.getElementById(id)?.addEventListener('click', () => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          chrome.tabs.sendMessage(tabs[0].id, { type: 'OPEN_SIDEBAR', task: sidebarTasks[id] })
+          chrome.tabs.sendMessage(tabs[0].id, { type: 'TOGGLE_SIDEBAR', payload: { initial_action: sidebarTasks[id] } })
           window.close()
         })
       })
@@ -346,7 +347,7 @@
       const query = document.getElementById('aiInput').value.trim()
       if (!query) return
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        chrome.tabs.sendMessage(tabs[0].id, { type: 'OPEN_SIDEBAR', task: 'custom', userInput: query })
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'TOGGLE_SIDEBAR', payload: { initial_action: 'custom', user_input: query } })
         window.close()
       })
     }
@@ -354,6 +355,27 @@
     document.getElementById('sendBtn').addEventListener('click', sendQuery)
     document.getElementById('aiInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') sendQuery()
+    })
+
+    // ─── Account state ────────────────────────
+    chrome.runtime.sendMessage({ type: 'GET_SESSION' }, (session) => {
+      const planLabel = document.getElementById('planLabel')
+      const signInLink = document.getElementById('signInLink')
+      const upgradeLink = document.getElementById('upgradeLink')
+
+      if (session?.email) {
+        const planNames = { free: 'Free Plan', pro: 'Pro Plan', enterprise: 'Enterprise Plan' }
+        planLabel.textContent = `✦ ${planNames[session.plan] || 'Free Plan'}`
+        upgradeLink.style.display = session.plan === 'free' ? '' : 'none'
+      } else {
+        planLabel.textContent = '✦ Not signed in'
+        upgradeLink.style.display = 'none'
+        signInLink.style.display = ''
+      }
+    })
+
+    document.getElementById('signInLink').addEventListener('click', () => {
+      chrome.tabs.create({ url: 'https://taskpilot.cc/auth/login?source=extension' })
     })
 
     // ─── Links ────────────────────────────────

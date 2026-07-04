@@ -14,6 +14,7 @@ const EXTENSION_VERSION = "1.0.0";
 interface ExtensionSession {
   session_id: string;
   user_id?: string;
+  email?: string;
   auth_token?: string;
   plan: "free" | "pro" | "enterprise";
   actions_used: number;
@@ -188,6 +189,64 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handleMessage(message, sender).then(sendResponse);
   return true; // Keep channel open for async
 });
+
+// ─── EXTERNAL MESSAGE HANDLER (web app → extension) ──────────
+// Wired via manifest.json's `externally_connectable`, restricted to
+// taskpilot.cc origins. Lets the web app hand the extension a signed-in
+// session right after login/logout, without the extension ever seeing
+// the user's password.
+
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  if (!sender.origin || !/^https:\/\/([a-z0-9-]+\.)*taskpilot\.cc$/.test(sender.origin)) {
+    sendResponse({ error: "Untrusted origin" });
+    return;
+  }
+
+  handleExternalMessage(message as { type: string; payload?: unknown }).then(sendResponse);
+  return true;
+});
+
+async function handleExternalMessage(message: {
+  type: string;
+  payload?: unknown;
+}): Promise<unknown> {
+  switch (message.type) {
+    case "AUTH_SUCCESS": {
+      const payload = message.payload as {
+        user_id: string;
+        email: string;
+        auth_token: string;
+        plan?: "free" | "pro" | "enterprise";
+      };
+      const current = await getOrCreateSession();
+      session = {
+        ...current,
+        user_id: payload.user_id,
+        email: payload.email,
+        auth_token: payload.auth_token,
+        plan: payload.plan || current.plan,
+      };
+      await chrome.storage.local.set({ session });
+      return { success: true };
+    }
+
+    case "AUTH_SIGNOUT": {
+      const current = await getOrCreateSession();
+      session = {
+        ...current,
+        user_id: undefined,
+        email: undefined,
+        auth_token: undefined,
+        plan: "free",
+      };
+      await chrome.storage.local.set({ session });
+      return { success: true };
+    }
+
+    default:
+      return { error: "Unknown message type" };
+  }
+}
 
 async function handleMessage(
   message: { type: string; payload?: unknown },

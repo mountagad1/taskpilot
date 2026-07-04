@@ -4,6 +4,7 @@ import { Suspense, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { notifyExtensionSignedIn } from '@/lib/extension-bridge'
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -51,7 +52,7 @@ function LoginForm() {
     setError(null)
     setLoading(true)
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
@@ -61,6 +62,14 @@ function LoginForm() {
     if (signInError) {
       setError(signInError.message)
       return
+    }
+
+    if (data.session && data.user?.email) {
+      notifyExtensionSignedIn({
+        userId: data.user.id,
+        email: data.user.email,
+        authToken: data.session.access_token,
+      })
     }
 
     router.push(redirectTo)

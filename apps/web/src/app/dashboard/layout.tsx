@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useRouter } from 'next/navigation'
+import { notifyExtensionSignedOut } from '@/lib/extension-bridge'
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Overview', icon: '⬡' },
@@ -25,6 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
+    notifyExtensionSignedOut()
     router.push('/')
   }
 

@@ -1,0 +1,20 @@
+{
+  "name": "@taskpilot/extension",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "package": "node scripts/build.mjs && node scripts/zip.mjs",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist *.zip"
+  },
+  "dependencies": {
+    "@taskpilot/browser-tools": "workspace:*",
+    "@taskpilot/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.0"
+  }
+}

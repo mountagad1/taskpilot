@@ -4,6 +4,7 @@ import { Suspense, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { notifyExtensionSignedIn } from '@/lib/extension-bridge'
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -74,7 +75,12 @@ function SignupForm() {
       return
     }
 
-    if (data.session) {
+    if (data.session && data.user?.email) {
+      notifyExtensionSignedIn({
+        userId: data.user.id,
+        email: data.user.email,
+        authToken: data.session.access_token,
+      })
       router.push(plan ? `/dashboard?plan=${plan}` : '/dashboard')
       router.refresh()
       return

@@ -38,9 +38,9 @@ function handleMessage(
 ) {
   switch (message.type) {
     case "TOGGLE_SIDEBAR":
-      toggleSidebar();
+      toggleSidebar(message.payload as SidebarInitialAction | undefined);
       sendResponse({ success: true });
-      break;
+      return;
 
     case "SMART_PASTE":
       handleSmartPaste(message.payload as string).then(sendResponse);
@@ -48,12 +48,12 @@ function handleMessage(
 
     case "GET_PAGE_CONTEXT":
       sendResponse(buildPageContext());
-      break;
+      return;
 
     case "AUTOFILL_FIELDS":
       autofillFields(message.payload as Array<{ selector: string; value: string }>);
       sendResponse({ success: true });
-      break;
+      return;
 
     case "EXTRACT_CONTENT":
       sendResponse({
@@ -61,7 +61,7 @@ function handleMessage(
         forms: detectFormFields(document),
         tables: extractTables(),
       });
-      break;
+      return;
 
     case "EXECUTE_ACTION":
       executeAction(message.payload as { action: string; params: unknown })
@@ -71,20 +71,29 @@ function handleMessage(
     case "SHOW_NOTIFICATION":
       showTaskPilotNotification(message.payload as { message: string; type: string });
       sendResponse({ success: true });
-      break;
+      return;
 
     case "HIGHLIGHT_FIELDS":
       highlightFormFields(message.payload as string[]);
       sendResponse({ success: true });
-      break;
+      return;
+
+    default:
+      return;
   }
 }
 
 // ─── SIDEBAR ─────────────────────────────────────────────────
 
-function toggleSidebar() {
+interface SidebarInitialAction {
+  initial_action?: string;
+  selected_text?: string;
+  user_input?: string;
+}
+
+function toggleSidebar(initialAction?: SidebarInitialAction) {
   if (!sidebarInjected) {
-    injectSidebar();
+    injectSidebar(initialAction);
   } else {
     sidebarVisible = !sidebarVisible;
     if (sidebarFrame) {
@@ -92,10 +101,16 @@ function toggleSidebar() {
         ? "translateX(0)"
         : "translateX(100%)";
     }
+    if (initialAction) {
+      sidebarFrame?.contentWindow?.postMessage(
+        { type: "INITIAL_ACTION", payload: initialAction },
+        chrome.runtime.getURL("sidebar.html")
+      );
+    }
   }
 }
 
-function injectSidebar() {
+function injectSidebar(initialAction?: SidebarInitialAction) {
   // Create container
   const container = document.createElement("div");
   container.id = "taskpilot-sidebar-container";
@@ -142,12 +157,18 @@ function injectSidebar() {
     }
   }, 50);
 
-  // Pass page context to sidebar
+  // Pass page context (and optionally an initial action) to the sidebar
   sidebarFrame.addEventListener("load", () => {
     sidebarFrame?.contentWindow?.postMessage(
       { type: "PAGE_CONTEXT", payload: buildPageContext() },
       chrome.runtime.getURL("sidebar.html")
     );
+    if (initialAction) {
+      sidebarFrame?.contentWindow?.postMessage(
+        { type: "INITIAL_ACTION", payload: initialAction },
+        chrome.runtime.getURL("sidebar.html")
+      );
+    }
   });
 }
 

@@ -1,0 +1,21 @@
+/* Injected on every page — scoped defensively so host-page CSS can't
+   override TaskPilot's own UI (the notification toast isn't inside the
+   sidebar's shadow root, so it needs its own reset). */
+
+#taskpilot-notification,
+#taskpilot-notification * {
+  all: revert;
+  box-sizing: border-box;
+}
+
+#taskpilot-sidebar-container,
+#taskpilot-sidebar-container * {
+  box-sizing: border-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #taskpilot-notification {
+    animation: none !important;
+    transition: none !important;
+  }
+}
