@@ -52,7 +52,7 @@ export function PageShell({
             gap: 8,
             textDecoration: 'none',
             fontFamily: 'var(--font-heading)',
-            fontWeight: 800,
+            fontWeight: 700,
             fontSize: 17,
             color: 'var(--foreground)',
           }}
@@ -108,7 +108,7 @@ export function PageShell({
             style={{
               fontFamily: 'var(--font-heading)',
               fontSize: 'clamp(34px, 5vw, 52px)',
-              fontWeight: 800,
+              fontWeight: 700,
               lineHeight: 1.05,
               letterSpacing: '-0.02em',
               margin: 0,

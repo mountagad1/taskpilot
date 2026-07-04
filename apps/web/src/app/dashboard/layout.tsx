@@ -1,22 +1,33 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-import { useRouter } from 'next/navigation'
 import { notifyExtensionSignedOut } from '@/lib/extension-bridge'
+import {
+  IconGrid, IconZap, IconSidebar, IconBot, IconWorkflow,
+  IconChart, IconPlug, IconSettings, IconCrown, IconLogout, IconLogo,
+} from '@/components/ui/icons'
 
-const NAV_ITEMS = [
-  { href: '/dashboard', label: 'Overview', icon: '⬡' },
-  // ── Product ──
-  { href: '/dashboard/smart-paste', label: 'Smart Paste', icon: '⚡' },
-  { href: '/dashboard/sidebar', label: 'AI Sidebar', icon: '✦' },
-  { href: '/dashboard/actions', label: 'Browser Actions', icon: '⚙' },
-  // ── Manage ──
-  { href: '/dashboard/workflows', label: 'Workflows', icon: '◇' },
-  { href: '/dashboard/analytics', label: 'Analytics', icon: '📊' },
-  { href: '/dashboard/integrations', label: 'Integrations', icon: '🔗' },
-  { href: '/dashboard/settings', label: 'Settings', icon: '⚙' },
+const NAV_SECTIONS: { label: string; items: { href: string; label: string; icon: React.ReactNode }[] }[] = [
+  {
+    label: 'Product',
+    items: [
+      { href: '/dashboard', label: 'Overview', icon: <IconGrid size={17} /> },
+      { href: '/dashboard/smart-paste', label: 'Smart Paste', icon: <IconZap size={17} /> },
+      { href: '/dashboard/sidebar', label: 'AI Sidebar', icon: <IconSidebar size={17} /> },
+      { href: '/dashboard/actions', label: 'Browser Actions', icon: <IconBot size={17} /> },
+    ],
+  },
+  {
+    label: 'Manage',
+    items: [
+      { href: '/dashboard/workflows', label: 'Workflows', icon: <IconWorkflow size={17} /> },
+      { href: '/dashboard/analytics', label: 'Analytics', icon: <IconChart size={17} /> },
+      { href: '/dashboard/integrations', label: 'Integrations', icon: <IconPlug size={17} /> },
+      { href: '/dashboard/settings', label: 'Settings', icon: <IconSettings size={17} /> },
+    ],
+  },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -31,12 +42,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', minHeight: '100vh' }}>
-      {/* Sidebar */}
+    <div style={{ display: 'grid', gridTemplateColumns: '236px 1fr', minHeight: '100vh' }}>
       <aside
         style={{
           background: 'var(--background-secondary)',
-          borderRight: '1px solid var(--border)',
+          borderRight: '1px solid var(--border-subtle)',
           display: 'flex',
           flexDirection: 'column',
           position: 'sticky',
@@ -45,67 +55,79 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }}
       >
         {/* Logo */}
-        <div className="p-5 border-b" style={{ borderColor: 'var(--border)' }}>
-          <Link href="/" className="flex items-center gap-2.5">
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold"
-              style={{ background: 'var(--gradient-brand)' }}
-            >
-              ✦
-            </div>
-            <span className="font-heading font-bold text-sm text-foreground">TaskPilot</span>
+        <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border-subtle)' }}>
+          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: 'var(--foreground)' }}>
+            <span style={{ width: 26, height: 26, borderRadius: 7, background: 'var(--gradient-brand)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: 'var(--shadow-accent)' }}>
+              <IconLogo size={15} />
+            </span>
+            <span style={{ fontSize: 14.5, fontWeight: 600, letterSpacing: '-0.02em' }}>TaskPilot</span>
           </Link>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 p-3 space-y-1">
-          {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all"
-                style={{
-                  background: active ? 'var(--surface-active)' : 'transparent',
-                  color: active ? 'var(--foreground)' : 'var(--foreground-secondary)',
-                  fontFamily: 'var(--font-heading)',
-                  fontWeight: active ? '600' : '400',
-                  borderLeft: active ? '2px solid var(--indigo)' : '2px solid transparent',
-                }}
-              >
-                <span className="text-base w-5 text-center">{item.icon}</span>
-                {item.label}
-              </Link>
-            )
-          })}
+        <nav style={{ flex: 1, padding: 12, overflowY: 'auto' }} className="no-scrollbar">
+          {NAV_SECTIONS.map((section) => (
+            <div key={section.label} style={{ marginBottom: 16 }}>
+              <div style={{ padding: '0 10px 6px', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--foreground-muted)' }}>
+                {section.label}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {section.items.map((item) => {
+                  const active = pathname === item.href
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      aria-current={active ? 'page' : undefined}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '7px 10px',
+                        borderRadius: 8,
+                        fontSize: 13.5,
+                        fontWeight: active ? 550 : 450,
+                        textDecoration: 'none',
+                        background: active ? 'var(--surface-active)' : 'transparent',
+                        color: active ? 'var(--foreground)' : 'var(--foreground-secondary)',
+                        transition: 'background 140ms var(--ease), color 140ms var(--ease)',
+                      }}
+                      className="dash-nav-link"
+                    >
+                      <span style={{ display: 'flex', color: active ? 'var(--indigo-light)' : 'var(--foreground-tertiary)' }}>{item.icon}</span>
+                      {item.label}
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* Footer */}
-        <div className="p-3 border-t space-y-1" style={{ borderColor: 'var(--border)' }}>
+        <div style={{ padding: 12, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Link
             href="/dashboard/settings"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all hover:bg-surface"
-            style={{ color: 'var(--foreground-secondary)', fontFamily: 'var(--font-heading)', fontWeight: 500 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 8, fontSize: 13.5, fontWeight: 450, textDecoration: 'none', color: 'var(--foreground-secondary)' }}
+            className="dash-nav-link"
           >
-            <span className="w-5 text-center">💎</span>
+            <span style={{ display: 'flex', color: 'var(--warning)' }}><IconCrown size={17} /></span>
             Upgrade to Pro
           </Link>
           <button
             onClick={handleSignOut}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all hover:bg-surface"
-            style={{ color: 'var(--foreground-tertiary)', fontFamily: 'var(--font-heading)', fontWeight: 500 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 8, fontSize: 13.5, fontWeight: 450, background: 'transparent', border: 'none', color: 'var(--foreground-tertiary)', cursor: 'pointer', width: '100%', textAlign: 'left' }}
+            className="dash-nav-link"
           >
-            <span className="w-5 text-center">↩</span>
+            <span style={{ display: 'flex' }}><IconLogout size={17} /></span>
             Sign out
           </button>
         </div>
       </aside>
 
-      {/* Content */}
-      <main style={{ background: 'var(--background)', overflowY: 'auto' }}>
-        {children}
-      </main>
+      <main style={{ background: 'var(--background)', overflowY: 'auto' }}>{children}</main>
+
+      <style>{`.dash-nav-link:hover { background: var(--surface); color: var(--foreground); }`}</style>
     </div>
   )
 }

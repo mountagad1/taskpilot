@@ -9,18 +9,23 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        heading: ['var(--font-syne)', 'system-ui', 'sans-serif'],
-        body: ['var(--font-space)', 'system-ui', 'sans-serif'],
-        mono: ['var(--font-mono)', 'Courier New', 'monospace'],
-        sans: ['var(--font-space)', 'system-ui', 'sans-serif'],
+        // All three map to Inter now; kept as separate tokens so existing
+        // `font-heading` / `font-body` usages keep working.
+        heading: ['var(--font-sans)', 'system-ui', 'sans-serif'],
+        body: ['var(--font-sans)', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-mono)', 'ui-monospace', 'monospace'],
       },
       colors: {
         background: 'var(--background)',
         'background-secondary': 'var(--background-secondary)',
+        'background-tertiary': 'var(--background-tertiary)',
         foreground: 'var(--foreground)',
         'foreground-secondary': 'var(--foreground-secondary)',
+        'foreground-tertiary': 'var(--foreground-tertiary)',
         border: 'var(--border)',
         surface: 'var(--surface)',
+        accent: 'var(--accent)',
         indigo: {
           DEFAULT: 'var(--indigo)',
           light: 'var(--indigo-light)',
@@ -42,23 +47,25 @@ const config: Config = {
         xl: 'var(--radius-xl)',
       },
       boxShadow: {
+        sm: 'var(--shadow-sm)',
+        md: 'var(--shadow-md)',
+        lg: 'var(--shadow-lg)',
+        accent: 'var(--shadow-accent)',
         indigo: 'var(--shadow-indigo)',
         glow: 'var(--shadow-glow)',
       },
+      maxWidth: {
+        container: 'var(--container)',
+      },
       animation: {
-        'fade-in': 'fade-in 0.4s ease forwards',
-        'fade-in-scale': 'fade-in-scale 0.3s ease forwards',
-        'gradient-x': 'gradient-x 4s ease infinite',
-        'float': 'float 6s ease-in-out infinite',
+        'fade-in': 'fade-in 0.4s cubic-bezier(0.22,1,0.36,1) forwards',
+        'fade-in-scale': 'fade-in-scale 0.3s cubic-bezier(0.22,1,0.36,1) forwards',
+        float: 'float 6s ease-in-out infinite',
       },
       keyframes: {
-        'gradient-x': {
-          '0%, 100%': { 'background-position': '0% 50%' },
-          '50%': { 'background-position': '100% 50%' },
-        },
-        'float': {
+        float: {
           '0%, 100%': { transform: 'translateY(0px)' },
-          '50%': { transform: 'translateY(-10px)' },
+          '50%': { transform: 'translateY(-8px)' },
         },
       },
     },

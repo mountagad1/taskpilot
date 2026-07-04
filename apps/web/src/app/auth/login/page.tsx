@@ -81,7 +81,7 @@ function LoginForm() {
       <h1
         style={{
           fontFamily: 'var(--font-heading)',
-          fontWeight: 800,
+          fontWeight: 700,
           fontSize: 24,
           marginBottom: 6,
           color: 'var(--foreground)',

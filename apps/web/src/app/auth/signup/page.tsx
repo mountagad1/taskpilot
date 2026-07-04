@@ -96,7 +96,7 @@ function SignupForm() {
         <h1
           style={{
             fontFamily: 'var(--font-heading)',
-            fontWeight: 800,
+            fontWeight: 700,
             fontSize: 22,
             marginBottom: 8,
             color: 'var(--foreground)',
@@ -117,7 +117,7 @@ function SignupForm() {
       <h1
         style={{
           fontFamily: 'var(--font-heading)',
-          fontWeight: 800,
+          fontWeight: 700,
           fontSize: 24,
           marginBottom: 6,
           color: 'var(--foreground)',

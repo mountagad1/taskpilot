@@ -38,7 +38,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
           gap: 8,
           textDecoration: 'none',
           fontFamily: 'var(--font-heading)',
-          fontWeight: 800,
+          fontWeight: 700,
           fontSize: 18,
           color: 'var(--foreground)',
           marginBottom: 32,

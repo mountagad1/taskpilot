@@ -60,7 +60,7 @@ export default function ChangelogPage() {
                 style={{
                   fontFamily: 'var(--font-heading)',
                   fontSize: 24,
-                  fontWeight: 800,
+                  fontWeight: 700,
                   color: 'var(--foreground)',
                   margin: 0,
                 }}
