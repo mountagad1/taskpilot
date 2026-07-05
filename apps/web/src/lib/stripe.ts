@@ -144,6 +144,13 @@ export async function handleWebhookEvent(
 // ─── EVENT HANDLERS ──────────────────────────────────────────
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+  // Marketplace agent purchase → grant the buyer access and split the fee.
+  if (session.metadata?.type === "agent_purchase") {
+    const { fulfillAgentPurchase } = await import("./marketplace");
+    await fulfillAgentPurchase(session);
+    return;
+  }
+
   const userId = session.metadata?.supabase_user_id;
   if (!userId) return;
 

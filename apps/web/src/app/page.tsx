@@ -293,7 +293,7 @@ export default function LandingPage() {
             <a href="#how">How it works</a>
             <a href="#features">Features</a>
             <a href="#pricing">Pricing</a>
-            <a href="#demo">Demo</a>
+            <a href="/marketplace">Marketplace</a>
           </div>
           <div className="lp-nav-cta">
             <a href="/auth/login" className="btn btn-ghost btn-sm">Sign in</a>

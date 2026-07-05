@@ -6,7 +6,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { notifyExtensionSignedOut } from '@/lib/extension-bridge'
 import {
   IconGrid, IconZap, IconSidebar, IconBot, IconWorkflow,
-  IconChart, IconPlug, IconSettings, IconCrown, IconLogout, IconLogo,
+  IconChart, IconPlug, IconSettings, IconCrown, IconLogout, IconLogo, IconStar,
 } from '@/components/ui/icons'
 
 const NAV_SECTIONS: { label: string; items: { href: string; label: string; icon: React.ReactNode }[] }[] = [
@@ -23,6 +23,7 @@ const NAV_SECTIONS: { label: string; items: { href: string; label: string; icon:
     label: 'Manage',
     items: [
       { href: '/dashboard/workflows', label: 'Workflows', icon: <IconWorkflow size={17} /> },
+      { href: '/dashboard/marketplace', label: 'Marketplace', icon: <IconStar size={17} /> },
       { href: '/dashboard/analytics', label: 'Analytics', icon: <IconChart size={17} /> },
       { href: '/dashboard/integrations', label: 'Integrations', icon: <IconPlug size={17} /> },
       { href: '/dashboard/settings', label: 'Settings', icon: <IconSettings size={17} /> },
