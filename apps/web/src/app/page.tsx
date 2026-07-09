@@ -33,6 +33,12 @@ const css = `
 .lp-nav-links a { padding: 7px 12px; border-radius: 7px; font-size: 14px; font-weight: 450; color: var(--foreground-secondary); text-decoration: none; transition: color var(--transition-fast), background var(--transition-fast); }
 .lp-nav-links a:hover { color: var(--foreground); background: var(--surface); }
 .lp-nav-cta { display: flex; align-items: center; gap: 8px; }
+.lp-nav-toggle { display: none; align-items: center; justify-content: center; width: 40px; height: 40px; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--surface); color: var(--foreground); cursor: pointer; }
+.lp-nav-mobile { position: absolute; top: 100%; left: 0; right: 0; background: rgba(8, 8, 11, 0.96); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--border-subtle); padding: 12px 24px 18px; display: flex; flex-direction: column; gap: 2px; }
+.lp-nav-mobile a { padding: 11px 12px; border-radius: 8px; font-size: 15px; font-weight: 450; color: var(--foreground-secondary); text-decoration: none; }
+.lp-nav-mobile a:active { background: var(--surface); }
+.lp-nav-mobile-cta { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.lp-nav-mobile-cta .btn { width: 100%; justify-content: center; }
 
 /* ── Hero ── */
 .lp-hero { position: relative; padding-top: 132px; padding-bottom: 72px; text-align: center; overflow: hidden; }
@@ -190,6 +196,8 @@ const css = `
 /* ── Responsive ── */
 @media (max-width: 900px) {
   .lp-nav-links { display: none; }
+  .lp-nav-cta { display: none; }
+  .lp-nav-toggle { display: flex; }
   .lp-how { grid-template-columns: 1fr; }
   .lp-feat { grid-template-columns: 1fr 1fr; }
   .lp-feat-lg, .lp-feat-wide { grid-column: span 2; grid-row: auto; }
@@ -255,6 +263,7 @@ export default function LandingPage() {
   const [heroFilled, setHeroFilled] = useState(0)
   const [aiMsg, setAiMsg] = useState<'typing' | 'found' | 'done'>('typing')
   const [demoStep, setDemoStep] = useState(0)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -299,7 +308,32 @@ export default function LandingPage() {
             <a href="/auth/login" className="btn btn-ghost btn-sm">Sign in</a>
             <a href="/auth/signup" className="btn btn-primary btn-sm"><IconChrome size={15} /> Add to Chrome</a>
           </div>
+          <button
+            type="button"
+            className="lp-nav-toggle"
+            aria-label="Toggle menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            {menuOpen ? (
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+            ) : (
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+            )}
+          </button>
         </div>
+        {menuOpen && (
+          <div className="lp-nav-mobile">
+            <a href="#how" onClick={() => setMenuOpen(false)}>How it works</a>
+            <a href="#features" onClick={() => setMenuOpen(false)}>Features</a>
+            <a href="#pricing" onClick={() => setMenuOpen(false)}>Pricing</a>
+            <a href="/marketplace" onClick={() => setMenuOpen(false)}>Marketplace</a>
+            <div className="lp-nav-mobile-cta">
+              <a href="/auth/login" className="btn btn-secondary" onClick={() => setMenuOpen(false)}>Sign in</a>
+              <a href="/auth/signup" className="btn btn-primary" onClick={() => setMenuOpen(false)}><IconChrome size={15} /> Add to Chrome</a>
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* HERO */}
