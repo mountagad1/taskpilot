@@ -151,6 +151,11 @@ const css = `
 .lp-pill.accent { background: rgba(109,118,245,0.1); border-color: rgba(109,118,245,0.24); color: var(--indigo-light); }
 
 /* ── Pricing ── */
+.lp-billing { display: inline-flex; align-items: center; gap: 4px; margin: 24px auto 0; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-full); }
+.lp-billing button { display: inline-flex; align-items: center; gap: 7px; border: none; background: transparent; color: var(--foreground-tertiary); font-size: 13.5px; font-weight: 500; padding: 7px 16px; border-radius: var(--radius-full); cursor: pointer; transition: color var(--transition-fast), background var(--transition-fast); }
+.lp-billing button.active { background: var(--gradient-brand); color: #fff; box-shadow: var(--shadow-accent); }
+.lp-billing .save { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: var(--radius-full); background: rgba(52,208,232,0.16); color: var(--cyan-light); }
+.lp-billing button.active .save { background: rgba(255,255,255,0.22); color: #fff; }
 .lp-price { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; max-width: 920px; margin: 44px auto 0; }
 .lp-price-card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 26px 24px; text-align: left; transition: all var(--transition-fast); }
 .lp-price-card:hover { border-color: var(--border-strong); }
@@ -264,6 +269,7 @@ export default function LandingPage() {
   const [aiMsg, setAiMsg] = useState<'typing' | 'found' | 'done'>('typing')
   const [demoStep, setDemoStep] = useState(0)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
 
   useEffect(() => {
     let cancelled = false
@@ -554,13 +560,25 @@ export default function LandingPage() {
               <span className="eyebrow">Pricing</span>
               <h2 style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 600, letterSpacing: '-0.025em', marginTop: 16 }}>Start free. Scale when you&apos;re ready.</h2>
               <p style={{ marginTop: 14, fontSize: 16, color: 'var(--foreground-secondary)', lineHeight: 1.6 }}>No card required to start. Pro unlocks unlimited AI, all integrations and browser automation.</p>
+              <div className="lp-billing" role="tablist" aria-label="Billing period">
+                <button type="button" role="tab" aria-selected={billing === 'monthly'} className={billing === 'monthly' ? 'active' : ''} onClick={() => setBilling('monthly')}>Monthly</button>
+                <button type="button" role="tab" aria-selected={billing === 'annual'} className={billing === 'annual' ? 'active' : ''} onClick={() => setBilling('annual')}>Annual <span className="save">Save 20%</span></button>
+              </div>
             </div>
           </Reveal>
           <Reveal delay={1}>
             <div className="lp-price">
               <PriceCard name="Free" amount={<>$0</>} per="Forever free" cta="Get started" href="/auth/signup" feats={[['30 AI actions / month', 1], ['Smart Paste on all sites', 1], ['AI Sidebar (basic)', 1], ['CSV export (5 / month)', 1], ['CRM integrations', 0], ['Browser Actions', 0]]} />
-              <PriceCard featured name="Pro" amount={<><sup>$</sup>19</>} per="per month · $190/yr" cta="Start 7-day trial" href="/auth/signup?plan=pro" feats={[['Unlimited AI actions', 1], ['Advanced field mapping', 1], ['Full AI Sidebar', 1], ['Unlimited exports', 1], ['HubSpot + Notion', 1], ['Browser Actions', 1], ['Priority support', 1]]} />
-              <PriceCard name="Enterprise" amount={<span style={{ fontSize: 26 }}>Custom</span>} per="Volume pricing" cta="Contact sales" href="mailto:hello@taskpilot.cc" feats={[['Everything in Pro', 1], ['SSO / SAML', 1], ['Team management', 1], ['REST API access', 1], ['Custom model routing', 1], ['SLA + security review', 1]]} />
+              <PriceCard
+                featured
+                name="Pro"
+                amount={billing === 'monthly' ? <><sup>$</sup>39.99</> : <><sup>$</sup>31.99</>}
+                per={billing === 'monthly' ? 'per month, billed monthly' : 'per month · billed annually ($383.90/yr)'}
+                cta="Start 7-day trial"
+                href={`/auth/signup?plan=pro&billing=${billing}`}
+                feats={[['Unlimited AI actions', 1], ['Advanced field mapping', 1], ['Full AI Sidebar', 1], ['Unlimited exports', 1], ['HubSpot + Notion', 1], ['Browser Actions', 1], ['Priority support', 1]]}
+              />
+              <PriceCard name="Enterprise" amount={<span style={{ fontSize: 26 }}>Custom</span>} per="Per-seat pricing — scales with your team" cta="Contact sales" href="mailto:hello@taskpilot.cc" feats={[['Everything in Pro', 1], ['Volume per-seat discounts', 1], ['SSO / SAML', 1], ['Team management', 1], ['REST API access', 1], ['SLA + security review', 1]]} />
             </div>
           </Reveal>
         </div>
@@ -622,7 +640,6 @@ export default function LandingPage() {
           </div>
           <div className="lp-footer-bottom">
             <span>© {new Date().getFullYear()} TaskPilot, Inc.</span>
-            <span>Built with Next.js · Supabase · Upstash</span>
           </div>
         </div>
       </footer>
