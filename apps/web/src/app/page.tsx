@@ -38,7 +38,7 @@ const css = `
 .lp-hero { position: relative; padding-top: 132px; padding-bottom: 72px; text-align: center; overflow: hidden; }
 .lp-hero-glow { position: absolute; top: -60px; left: 50%; transform: translateX(-50%); width: 780px; max-width: 120vw; height: 460px; background: radial-gradient(ellipse at center, rgba(109,118,245,0.14) 0%, transparent 66%); pointer-events: none; }
 .lp-hero h1 { font-size: clamp(38px, 6vw, 58px); font-weight: 600; letter-spacing: -0.032em; line-height: 1.05; max-width: 780px; margin-inline: auto; }
-.lp-hero-sub { margin: 18px auto 0; max-width: 500px; font-size: clamp(15px, 2vw, 17px); line-height: 1.55; color: var(--foreground-secondary); }
+.lp-hero-sub { margin: 18px auto 0; max-width: 580px; font-size: clamp(15px, 2vw, 17px); line-height: 1.55; color: var(--foreground-secondary); }
 .lp-hero-actions { margin-top: 28px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .lp-hero-note { margin-top: 14px; font-size: 12.5px; color: var(--foreground-tertiary); }
 
@@ -309,8 +309,8 @@ export default function LandingPage() {
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 22 }}>
             <span className="eyebrow"><span className="pulse-dot" /> New — Browser Actions in Phase 3 beta</span>
           </div>
-          <h1>Talk to any webpage <span className="gradient-text">instantly.</span></h1>
-          <p className="lp-hero-sub">Autofill forms, extract data, generate replies, and export to Excel — from any tab, with a single AI command.</p>
+          <h1>The AI Agent for Your <span className="gradient-text">Browser</span></h1>
+          <p className="lp-hero-sub">Turn natural language into real browser actions. Fill forms, extract data, generate replies, automate repetitive work, and export results—all from any website.</p>
           <div className="lp-hero-actions">
             <a href="/auth/signup" className="btn btn-primary btn-lg"><IconPlay size={15} /> Add to Chrome — free</a>
             <a href="#demo" className="btn btn-secondary btn-lg">See it in action <IconArrowRight size={15} /></a>
