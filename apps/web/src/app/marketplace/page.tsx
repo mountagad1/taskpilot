@@ -1,6 +1,5 @@
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
 import type { Metadata } from 'next'
+import { listAgents, apiReachable } from '@/lib/server-api'
 import { MarketplaceHeader } from '@/components/marketplace/header'
 import { AgentCard, type AgentCardData } from '@/components/marketplace/agent-card'
 import { CATEGORY_LABELS } from '@/lib/format'
@@ -18,18 +17,7 @@ export default async function MarketplacePage({
 }: {
   searchParams: { category?: string }
 }) {
-  const supabase = createServerComponentClient({ cookies })
-
-  let query = supabase
-    .from('marketplace_agents')
-    .select('slug, name, tagline, category, price_cents, currency, sales_count, seller_id, capabilities')
-    .eq('status', 'listed')
-    .order('sales_count', { ascending: false })
-
-  if (searchParams.category) query = query.eq('category', searchParams.category)
-
-  const { data } = await query
-  const agents = (data as AgentCardData[] | null) ?? []
+  const agents = await listAgents(searchParams.category)
 
   const categories = Object.keys(CATEGORY_LABELS)
 
@@ -64,7 +52,9 @@ export default async function MarketplacePage({
 
         {agents.length === 0 ? (
           <div className="ui-card" style={{ textAlign: 'center', padding: '56px 24px', color: 'var(--foreground-tertiary)' }}>
-            No agents in this category yet.
+            {(await apiReachable())
+              ? 'No agents in this category yet.'
+              : 'The catalogue is unavailable — the TaskPilot API is not reachable from here.'}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
@@ -98,3 +88,9 @@ function FilterPill({ href, active, label }: { href: string; active: boolean; la
     </Link>
   )
 }
+
+/**
+ * The catalogue is public, so this page must render for signed-out visitors —
+ * and on a deployment with no database at all. A failure here shows an empty
+ * catalogue rather than a 500 on the most linked-to page in the product.
+ */

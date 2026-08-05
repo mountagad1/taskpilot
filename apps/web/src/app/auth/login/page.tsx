@@ -3,7 +3,7 @@
 import { Suspense, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { signIn, AuthError } from '@/lib/client/auth'
 import { notifyExtensionSignedIn } from '@/lib/extension-bridge'
 
 const inputStyle: React.CSSProperties = {
@@ -38,7 +38,6 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const supabase = createClientComponentClient()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -52,28 +51,24 @@ function LoginForm() {
     setError(null)
     setLoading(true)
 
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    try {
+      const session = await signIn(email, password)
 
-    setLoading(false)
-
-    if (signInError) {
-      setError(signInError.message)
-      return
-    }
-
-    if (data.session && data.user?.email) {
+      // Hand the extension the same token so it can call the API too.
       notifyExtensionSignedIn({
-        userId: data.user.id,
-        email: data.user.email,
-        authToken: data.session.access_token,
+        userId: session.user.id,
+        email: session.user.email,
+        authToken: session.access_token,
+        plan: session.user.plan,
       })
-    }
 
-    router.push(redirectTo)
-    router.refresh()
+      router.push(redirectTo)
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof AuthError ? err.message : 'Could not sign you in')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (

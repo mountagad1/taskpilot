@@ -1,5 +1,3 @@
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import Link from 'next/link'
@@ -7,6 +5,7 @@ import { MarketplaceHeader } from '@/components/marketplace/header'
 import { BuyButton } from '@/components/marketplace/buy-button'
 import { formatPrice, CATEGORY_LABELS } from '@/lib/format'
 import { IconBot, IconCheck, IconArrowRight, IconZap } from '@/components/ui/icons'
+import { getAgentBySlug } from '@/lib/server-api'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,23 +20,12 @@ interface AgentDetail {
   price_cents: number
   currency: string
   sales_count: number
-  seller_id: string | null
+  owner_id: string | null
   version: string
 }
 
-async function getAgent(slug: string) {
-  const supabase = createServerComponentClient({ cookies })
-  const { data } = await supabase
-    .from('marketplace_agents')
-    .select('id, slug, name, tagline, description, category, capabilities, price_cents, currency, sales_count, seller_id, version')
-    .eq('slug', slug)
-    .eq('status', 'listed')
-    .maybeSingle<AgentDetail>()
-  return data
-}
-
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const agent = await getAgent(params.slug)
+  const agent = await getAgentBySlug(params.slug)
   if (!agent) return { title: 'Agent not found' }
   return { title: agent.name, description: agent.tagline || undefined }
 }
@@ -58,28 +46,12 @@ const CAP_LABELS: Record<string, string> = {
 }
 
 export default async function AgentDetailPage({ params }: { params: { slug: string } }) {
-  const supabase = createServerComponentClient({ cookies })
-  const agent = await getAgent(params.slug)
+  const agent = await getAgentBySlug(params.slug)
   if (!agent) notFound()
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  const userId = session?.user?.id ?? null
-
-  let owned = false
-  if (userId) {
-    const { data: purchase } = await supabase
-      .from('agent_purchases')
-      .select('id')
-      .eq('agent_id', agent.id)
-      .eq('buyer_id', userId)
-      .eq('status', 'completed')
-      .maybeSingle()
-    owned = !!purchase
-  }
-
-  const isOwnListing = !!userId && agent.seller_id === userId
+  // Entitlement is resolved in the browser: this page is public and cached,
+  // so it must render the same HTML for everyone. BuyButton corrects itself
+  // once the client knows who is looking.
   const caps = Array.isArray(agent.capabilities) ? agent.capabilities : []
 
   return (
@@ -101,7 +73,7 @@ export default async function AgentDetailPage({ params }: { params: { slug: stri
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <h1 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em' }}>{agent.name}</h1>
-                  {agent.seller_id === null && (
+                  {agent.owner_id === null && (
                     <span className="badge badge-indigo"><IconCheck size={12} /> Official</span>
                   )}
                 </div>
@@ -149,9 +121,6 @@ export default async function AgentDetailPage({ params }: { params: { slug: stri
               slug={agent.slug}
               priceLabel={formatPrice(agent.price_cents, agent.currency)}
               isFree={agent.price_cents === 0}
-              owned={owned}
-              signedIn={!!userId}
-              isOwnListing={isOwnListing}
             />
 
             <ul style={{ listStyle: 'none', padding: 0, margin: '18px 0 0', display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -162,7 +131,7 @@ export default async function AgentDetailPage({ params }: { params: { slug: stri
               ))}
             </ul>
 
-            {agent.price_cents > 0 && agent.seller_id && (
+            {agent.price_cents > 0 && agent.owner_id && (
               <p style={{ marginTop: 16, fontSize: 11.5, color: 'var(--foreground-muted)', lineHeight: 1.5 }}>
                 Sold by a TaskPilot creator. TaskPilot processes the payment and retains a 10% platform fee.
               </p>

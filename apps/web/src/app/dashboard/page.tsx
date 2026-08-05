@@ -1,206 +1,307 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+// ============================================================
+// TASKPILOT — DASHBOARD OVERVIEW
+// apps/web/src/app/dashboard/page.tsx
+//
+// A real snapshot: recent runs, this month's usage against the plan
+// allowance, and the next useful action. No placeholder numbers — an empty
+// account says so plainly and points at how to get started.
+// ============================================================
 
-const stats = [
-  { label: 'AI Actions Today', value: '—', key: 'today_actions', suffix: '' },
-  { label: 'Hours Saved', value: '—', key: 'hours_saved', suffix: 'h' },
-  { label: 'Forms Autofilled', value: '—', key: 'forms_filled', suffix: '' },
-  { label: 'This Month', value: '—', key: 'monthly_actions', suffix: ' actions' },
-]
+import Link from 'next/link'
 
-const quickActions = [
-  { icon: '⚡', label: 'Smart Paste', desc: 'Install extension to use' },
-  { icon: '🧠', label: 'AI Sidebar', desc: 'Chat with any webpage' },
-  { icon: '📊', label: 'Export Data', desc: 'CSV, Excel, PDF' },
-  { icon: '🔗', label: 'Integrations', desc: 'HubSpot, Notion, Slack' },
-]
+import { useApi, useApiList } from '@/lib/client/api'
+import { ErrorState, SkeletonCard, SkeletonList } from '@/components/states'
+import { IconBot, IconZap, IconWorkflow, IconStar, IconArrowRight } from '@/components/ui/icons'
 
-const recentActivity = [
-  { icon: '⚡', action: 'Smart Paste', target: 'HubSpot — contact form', time: '2 min ago', status: 'success' },
-  { icon: '📄', action: 'Summarize', target: 'TechCrunch article', time: '15 min ago', status: 'success' },
-  { icon: '📊', action: 'Extract Data', target: 'LinkedIn company page', time: '1h ago', status: 'success' },
-  { icon: '✍️', action: 'Rewrite', target: 'Email draft', time: '3h ago', status: 'success' },
+interface Analytics {
+  totals: {
+    runs: number
+    completed: number
+    failed: number
+    success_rate: number | null
+    tokens: number
+    cost_usd: number
+    median_duration_ms: number | null
+  }
+  published: { agents: number; installs: number; sales: number; gross_cents: number }
+}
+
+interface RunRow {
+  id: string
+  goal: string
+  status: string
+  domain: string | null
+  steps_completed: number
+  steps_total: number
+  started_at: string
+}
+
+const NEXT_STEPS = [
+  {
+    href: '/dashboard/agents',
+    icon: <IconZap size={16} />,
+    title: 'Build an agent',
+    body: 'Package a repeated browser task once and run it from anywhere.',
+  },
+  {
+    href: '/marketplace',
+    icon: <IconStar size={16} />,
+    title: 'Install a ready-made agent',
+    body: 'Free and paid agents for CRMs, storefronts, inboxes and research.',
+  },
+  {
+    href: '/dashboard/workflows',
+    icon: <IconWorkflow size={16} />,
+    title: 'Automate on a schedule',
+    body: 'Chain steps into a workflow and let it run without you.',
+  },
 ]
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<{ email?: string; full_name?: string; plan?: string } | null>(null)
-  const [metrics, setMetrics] = useState(stats)
-  const supabase = createClientComponentClient()
-
-  useEffect(() => {
-    const loadData = async () => {
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      if (!authUser) return
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('full_name, plan')
-        .eq('id', authUser.id)
-        .single()
-
-      setUser({ email: authUser.email, ...profile })
-
-      // Load metrics
-      const { data: metricsData } = await supabase
-        .from('productivity_metrics')
-        .select('*')
-        .eq('user_id', authUser.id)
-        .order('date', { ascending: false })
-        .limit(30)
-
-      if (metricsData?.length) {
-        const total = metricsData.reduce((acc, d) => acc + (d.actions_completed || 0), 0)
-        const today = metricsData[0]?.actions_completed || 0
-        const hours = metricsData.reduce((acc, d) => acc + (d.time_saved_minutes || 0), 0) / 60
-
-        setMetrics([
-          { ...stats[0], value: String(today) },
-          { ...stats[1], value: hours.toFixed(1) },
-          { ...stats[2], value: String(metricsData.reduce((a, d) => a + (d.forms_filled || 0), 0)) },
-          { ...stats[3], value: String(total) },
-        ])
-      }
-    }
-
-    loadData()
-  }, [])
-
-  const firstName = user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'there'
+  const analytics = useApi<Analytics>('/v1/analytics?days=30')
+  const runs = useApiList<RunRow>('/v1/runs?per_page=6')
 
   return (
-    <div className="p-8 space-y-8 max-w-6xl">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-heading font-bold text-foreground">
-            Good morning, {firstName} 👋
-          </h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--foreground-secondary)' }}>
-            Your AI browser workspace is ready
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="badge badge-indigo text-xs">
-            {user?.plan === 'pro' ? '⚡ Pro' : '🆓 Free'}
-          </span>
-          {user?.plan !== 'pro' && (
-            <button className="btn btn-primary text-sm px-4 py-2">
-              Upgrade to Pro
-            </button>
-          )}
-        </div>
-      </div>
+    <div style={{ padding: 28, maxWidth: 960 }}>
+      <header style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em' }}>Overview</h1>
+        <p style={{ fontSize: 14, color: 'var(--foreground-secondary)', marginTop: 4 }}>
+          The last 30 days of automation across your browser.
+        </p>
+      </header>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {metrics.map((stat, i) => (
-          <div
-            key={i}
-            className="glass glass-hover rounded-xl p-5"
+      {analytics.loading ? (
+        <SkeletonCard />
+      ) : analytics.error ? (
+        <ErrorState message={analytics.error} onRetry={analytics.reload} />
+      ) : analytics.data ? (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))',
+            gap: 12,
+            marginBottom: 26,
+          }}
+        >
+          <Stat label="Runs" value={analytics.data.totals.runs.toLocaleString()} />
+          <Stat
+            label="Success rate"
+            value={
+              analytics.data.totals.success_rate === null ? '—' : `${analytics.data.totals.success_rate}%`
+            }
+          />
+          <Stat
+            label="Median duration"
+            value={
+              analytics.data.totals.median_duration_ms
+                ? formatDuration(analytics.data.totals.median_duration_ms)
+                : '—'
+            }
+          />
+          <Stat label="AI cost" value={`$${analytics.data.totals.cost_usd.toFixed(4)}`} />
+        </div>
+      ) : null}
+
+      <section style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 600 }}>Recent runs</h2>
+          <Link
+            href="/dashboard/runs"
+            style={{ marginLeft: 'auto', fontSize: 12.5, color: 'var(--indigo-light)', textDecoration: 'none' }}
           >
-            <p className="text-xs font-medium mb-2" style={{ color: 'var(--foreground-tertiary)' }}>
-              {stat.label}
-            </p>
-            <p className="text-2xl font-heading font-bold text-foreground">
-              {stat.value}
-              <span className="text-sm font-normal ml-0.5" style={{ color: 'var(--foreground-secondary)' }}>
-                {stat.suffix}
-              </span>
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* Install Extension Banner */}
-      <div
-        className="rounded-xl p-5 flex items-center justify-between"
-        style={{
-          background: 'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(34,211,238,0.06) 100%)',
-          border: '1px solid rgba(99,102,241,0.25)',
-        }}
-      >
-        <div className="flex items-center gap-4">
-          <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center text-xl"
-            style={{ background: 'rgba(99,102,241,0.2)' }}
-          >
-            🧩
-          </div>
-          <div>
-            <p className="font-heading font-semibold text-sm text-foreground">
-              Install the Chrome Extension
-            </p>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--foreground-secondary)' }}>
-              Enable Smart Paste, AI Sidebar, and Browser Actions on every webpage
-            </p>
-          </div>
+            View all →
+          </Link>
         </div>
-        <button className="btn btn-primary text-sm px-5 py-2 whitespace-nowrap">
-          Add to Chrome →
-        </button>
-      </div>
 
-      {/* Quick Actions + Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-        {/* Quick Actions */}
-        <div className="glass rounded-xl p-6">
-          <h2 className="font-heading font-semibold text-sm mb-4" style={{ color: 'var(--foreground-secondary)' }}>
-            QUICK ACTIONS
-          </h2>
-          <div className="grid grid-cols-2 gap-3">
-            {quickActions.map((action, i) => (
-              <button
-                key={i}
-                className="glass glass-hover rounded-lg p-4 text-left transition-all group"
+        {runs.loading ? (
+          <SkeletonList rows={3} />
+        ) : runs.error ? (
+          <ErrorState message={runs.error} onRetry={runs.reload} />
+        ) : runs.items.length === 0 ? (
+          <div className="ui-card" style={{ padding: 28, textAlign: 'center' }}>
+            <div style={{ color: 'var(--foreground-tertiary)', marginBottom: 10 }}>
+              <IconBot size={24} />
+            </div>
+            <div style={{ fontWeight: 600, marginBottom: 5 }}>Nothing has run yet</div>
+            <p style={{ fontSize: 13, color: 'var(--foreground-secondary)', maxWidth: 400, margin: '0 auto' }}>
+              Install the browser extension, open any page, and press{' '}
+              <kbd style={kbdStyle}>Alt</kbd>+<kbd style={kbdStyle}>K</kbd> to tell TaskPilot what to do.
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {runs.items.map((run) => (
+              <Link
+                key={run.id}
+                href="/dashboard/runs"
+                className="ui-card"
+                style={{
+                  padding: '11px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 11,
+                  textDecoration: 'none',
+                  color: 'inherit',
+                }}
               >
-                <div className="text-xl mb-2">{action.icon}</div>
-                <p className="font-heading font-semibold text-sm text-foreground">
-                  {action.label}
-                </p>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--foreground-tertiary)' }}>
-                  {action.desc}
-                </p>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="glass rounded-xl p-6">
-          <h2 className="font-heading font-semibold text-sm mb-4" style={{ color: 'var(--foreground-secondary)' }}>
-            RECENT ACTIVITY
-          </h2>
-          <div className="space-y-3">
-            {recentActivity.map((item, i) => (
-              <div key={i} className="flex items-center gap-3 py-2">
-                <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0"
-                  style={{ background: 'var(--surface-hover)' }}
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    flex: 'none',
+                    background: statusColour(run.status),
+                  }}
+                />
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: 13.5,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
                 >
-                  {item.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {item.action}
-                  </p>
-                  <p className="text-xs truncate" style={{ color: 'var(--foreground-tertiary)' }}>
-                    {item.target}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  <p className="text-xs" style={{ color: 'var(--foreground-tertiary)' }}>
-                    {item.time}
-                  </p>
-                </div>
-              </div>
+                  {run.goal}
+                </span>
+                {run.domain && (
+                  <span style={{ fontSize: 11.5, color: 'var(--foreground-muted)' }}>{run.domain}</span>
+                )}
+                <span style={{ fontSize: 11.5, color: 'var(--foreground-muted)', flex: 'none' }}>
+                  {formatRelative(run.started_at)}
+                </span>
+              </Link>
             ))}
           </div>
+        )}
+      </section>
+
+      {analytics.data && analytics.data.published.agents > 0 && (
+        <section style={{ marginBottom: 28 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Your published agents</h2>
+          <div className="ui-card" style={{ padding: 18, display: 'flex', gap: 26, flexWrap: 'wrap' }}>
+            <Mini label="Published" value={analytics.data.published.agents} />
+            <Mini label="Installs" value={analytics.data.published.installs} />
+            <Mini label="Sales" value={analytics.data.published.sales} />
+            <Mini label="Gross" value={`$${(analytics.data.published.gross_cents / 100).toFixed(2)}`} />
+            <Link
+              href="/dashboard/marketplace"
+              style={{
+                marginLeft: 'auto',
+                alignSelf: 'center',
+                fontSize: 12.5,
+                color: 'var(--indigo-light)',
+                textDecoration: 'none',
+              }}
+            >
+              Manage listings →
+            </Link>
+          </div>
+        </section>
+      )}
+
+      <section>
+        <h2 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>What next</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(250px,1fr))', gap: 12 }}>
+          {NEXT_STEPS.map((step) => (
+            <Link
+              key={step.href}
+              href={step.href}
+              className="ui-card"
+              style={{ padding: 16, textDecoration: 'none', color: 'inherit', display: 'block' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 7 }}>
+                <span style={{ color: 'var(--indigo-light)', display: 'flex' }}>{step.icon}</span>
+                <span style={{ fontWeight: 600, fontSize: 13.5 }}>{step.title}</span>
+                <span style={{ marginLeft: 'auto', color: 'var(--foreground-tertiary)', display: 'flex' }}>
+                  <IconArrowRight size={13} />
+                </span>
+              </div>
+              <p style={{ fontSize: 12.5, color: 'var(--foreground-secondary)', lineHeight: 1.55 }}>
+                {step.body}
+              </p>
+            </Link>
+          ))}
         </div>
-      </div>
+      </section>
     </div>
   )
+}
+
+// ─── PRIMITIVES ──────────────────────────────────────────────
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="ui-card" style={{ padding: 16 }}>
+      <div
+        style={{
+          fontSize: 11,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          color: 'var(--foreground-muted)',
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 23, fontWeight: 600, marginTop: 5 }}>{value}</div>
+    </div>
+  )
+}
+
+function Mini({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 10.5,
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          color: 'var(--foreground-muted)',
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 17, fontWeight: 600, marginTop: 2 }}>{value}</div>
+    </div>
+  )
+}
+
+const kbdStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-mono, monospace)',
+  fontSize: 11,
+  padding: '1px 5px',
+  borderRadius: 4,
+  border: '1px solid var(--border-subtle)',
+  background: 'var(--surface)',
+}
+
+function statusColour(status: string): string {
+  const colours: Record<string, string> = {
+    completed: '#22c55e',
+    failed: '#ef4444',
+    running: '#6366f1',
+    planning: '#818cf8',
+    awaiting_confirmation: '#f59e0b',
+    cancelled: '#64748b',
+    timed_out: '#f97316',
+  }
+  return colours[status] ?? '#94a3b8'
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`
+}
+
+function formatRelative(iso: string): string {
+  const delta = Date.now() - new Date(iso).getTime()
+  if (delta < 60_000) return 'just now'
+  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`
+  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h ago`
+  if (delta < 604_800_000) return `${Math.floor(delta / 86_400_000)}d ago`
+  return new Date(iso).toLocaleDateString()
 }

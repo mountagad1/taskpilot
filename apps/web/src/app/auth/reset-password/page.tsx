@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { requestPasswordReset, AuthError } from '@/lib/client/auth'
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -26,7 +26,6 @@ const labelStyle: React.CSSProperties = {
 }
 
 export default function ResetPasswordPage() {
-  const supabase = createClientComponentClient()
 
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
@@ -38,18 +37,16 @@ export default function ResetPasswordPage() {
     setError(null)
     setLoading(true)
 
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/update-password`,
-    })
-
-    setLoading(false)
-
-    if (resetError) {
-      setError(resetError.message)
-      return
+    try {
+      await requestPasswordReset(email, `${window.location.origin}/auth/update-password`)
+      // Always confirms, whether or not the address exists — the API answers
+      // the same way for the same reason.
+      setSent(true)
+    } catch (err) {
+      setError(err instanceof AuthError ? err.message : 'Could not send the reset email')
+    } finally {
+      setLoading(false)
     }
-
-    setSent(true)
   }
 
   if (sent) {

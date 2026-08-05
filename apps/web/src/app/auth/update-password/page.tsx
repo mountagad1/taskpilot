@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { updatePassword, AuthError } from '@/lib/client/auth'
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -27,7 +27,6 @@ const labelStyle: React.CSSProperties = {
 
 export default function UpdatePasswordPage() {
   const router = useRouter()
-  const supabase = createClientComponentClient()
 
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -44,19 +43,19 @@ export default function UpdatePasswordPage() {
     }
 
     setLoading(true)
-    const { error: updateError } = await supabase.auth.updateUser({ password })
-    setLoading(false)
 
-    if (updateError) {
-      setError(updateError.message)
-      return
+    try {
+      await updatePassword(password)
+      setDone(true)
+      setTimeout(() => {
+        router.push('/dashboard')
+        router.refresh()
+      }, 1500)
+    } catch (err) {
+      setError(err instanceof AuthError ? err.message : 'Could not update your password')
+    } finally {
+      setLoading(false)
     }
-
-    setDone(true)
-    setTimeout(() => {
-      router.push('/dashboard')
-      router.refresh()
-    }, 1500)
   }
 
   if (done) {

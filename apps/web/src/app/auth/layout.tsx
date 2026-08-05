@@ -1,6 +1,11 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+// Auth screens talk to Supabase from the client on mount, so there is
+// nothing to gain from static export — and prerendering them at build
+// time would require the Supabase keys to be present in CI.
+export const dynamic = 'force-dynamic'
+
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div

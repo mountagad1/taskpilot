@@ -1,275 +1,316 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useState, type FormEvent } from 'react'
+// ============================================================
+// TASKPILOT — MARKETPLACE LIBRARY
+// apps/web/src/app/dashboard/marketplace/page.tsx
+//
+// The buyer's side of the marketplace: agents you have installed or bought,
+// and how your own listings are performing. Authoring lives in the Agent
+// Studio, so this page never duplicates the create flow.
+// ============================================================
+
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-import { formatPrice, CATEGORY_LABELS } from '@/lib/format'
-import { IconDownload, IconBot, IconArrowRight } from '@/components/ui/icons'
-import { SkeletonList, EmptyState, ErrorState } from '@/components/states'
 
-const CAPABILITIES = [
-  'smart_paste', 'extract_emails', 'extract_prices', 'extract_data',
-  'export_csv', 'export_excel', 'generate_reply', 'rewrite_text',
-  'summarize', 'translate', 'meeting_notes', 'push_to_hubspot',
-]
+import { formatPrice } from '@/lib/format'
+import { api, useApiList, useMutation } from '@/lib/client/api'
+import { EmptyState, ErrorState, SkeletonList } from '@/components/states'
+import { IconBot, IconArrowRight, IconStar } from '@/components/ui/icons'
+import { DownloadManifestButton } from '@/components/marketplace/buy-button'
+import { TabBar } from '@/components/dashboard/tab-bar'
 
-type Tab = 'library' | 'listings' | 'sell'
+type Tab = 'library' | 'listings'
 
-interface OwnedAgent { id: string; slug: string; name: string; tagline: string | null; category: string; price_cents: number; currency: string }
-interface Listing { id: string; slug: string; name: string; status: string; price_cents: number; currency: string; sales_count: number }
+interface AgentRow {
+  id: string
+  slug: string
+  name: string
+  tagline: string | null
+  category: string
+  status: string
+  visibility: string
+  price_cents: number
+  currency: string
+  version: string
+  install_count: number
+  run_count: number
+  sales_count: number
+  rating_avg: number
+  rating_count: number
+}
+
+interface InstalledAgent {
+  id: string
+  agent_id: string
+  version: string
+  enabled: boolean
+  installed_at: string
+  last_run_at: string | null
+  agent: AgentRow | AgentRow[] | null
+}
 
 export default function DashboardMarketplacePage() {
   return (
-    <Suspense fallback={null}>
-      <MarketplaceDashboard />
+    <Suspense fallback={<SkeletonList rows={3} />}>
+      <MarketplaceLibrary />
     </Suspense>
   )
 }
 
-function MarketplaceDashboard() {
-  const supabase = createClientComponentClient()
-  const params = useSearchParams()
-  const [tab, setTab] = useState<Tab>((params.get('tab') as Tab) || 'library')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [owned, setOwned] = useState<OwnedAgent[]>([])
-  const [listings, setListings] = useState<Listing[]>([])
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setError('Please sign in.'); return }
-
-      const [purchasesRes, listingsRes] = await Promise.all([
-        supabase
-          .from('agent_purchases')
-          .select('agent:marketplace_agents(id, slug, name, tagline, category, price_cents, currency)')
-          .eq('buyer_id', user.id)
-          .eq('status', 'completed'),
-        supabase
-          .from('marketplace_agents')
-          .select('id, slug, name, status, price_cents, currency, sales_count')
-          .eq('seller_id', user.id)
-          .order('created_at', { ascending: false }),
-      ])
-
-      if (purchasesRes.error) throw new Error(purchasesRes.error.message)
-      const ownedAgents = (purchasesRes.data || [])
-        .map((r: { agent: OwnedAgent | OwnedAgent[] | null }) => (Array.isArray(r.agent) ? r.agent[0] : r.agent))
-        .filter(Boolean) as OwnedAgent[]
-      setOwned(ownedAgents)
-      setListings((listingsRes.data as Listing[]) || [])
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load your marketplace data.')
-    } finally {
-      setLoading(false)
-    }
-  }, [supabase])
-
-  useEffect(() => { load() }, [load])
+function MarketplaceLibrary() {
+  const [tab, setTab] = useState<Tab>('library')
+  const listings = useApiList<AgentRow>('/v1/agents')
 
   return (
     <div style={{ padding: 28, maxWidth: 960 }}>
-      <div style={{ marginBottom: 22 }}>
+      <header style={{ marginBottom: 22 }}>
         <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em' }}>Marketplace</h1>
         <p style={{ fontSize: 14, color: 'var(--foreground-secondary)', marginTop: 4 }}>
-          Your purchased agents, your listings, and a place to sell your own.{' '}
-          <Link href="/marketplace" style={{ color: 'var(--indigo-light)', textDecoration: 'none' }}>Browse the marketplace →</Link>
+          Agents you have installed, and how your own listings are doing.{' '}
+          <Link href="/marketplace" style={{ color: 'var(--indigo-light)', textDecoration: 'none' }}>
+            Browse the catalogue →
+          </Link>
         </p>
+      </header>
+
+      <TabBar
+        tabs={[
+          { id: 'library', label: 'Your library' },
+          { id: 'listings', label: `Your listings${listings.items.length ? ` (${listings.items.length})` : ''}` },
+        ]}
+        active={tab}
+        onChange={(id) => setTab(id as Tab)}
+      />
+
+      {tab === 'library' ? <Library /> : <Listings state={listings} />}
+    </div>
+  )
+}
+
+// ─── LIBRARY ─────────────────────────────────────────────────
+
+function Library() {
+  // The installs endpoint embeds the agent so the card can render in one pass.
+  const { items, loading, error, reload } = useApiList<InstalledAgent>('/v1/agents?installed=true')
+
+  if (loading) return <SkeletonList rows={3} />
+  if (error) return <ErrorState message={error} onRetry={reload} />
+
+  const installs = items
+    .map((install) => ({
+      ...install,
+      agent: Array.isArray(install.agent) ? install.agent[0] : install.agent,
+    }))
+    .filter((install) => install.agent)
+
+  if (installs.length === 0) {
+    return (
+      <EmptyState
+        icon={<IconBot size={22} />}
+        title="No agents installed"
+        description="Install an agent from the marketplace and it becomes available in the extension straight away."
+        action={
+          <Link href="/marketplace" className="btn btn-primary btn-sm">
+            Browse marketplace
+          </Link>
+        }
+      />
+    )
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(290px,1fr))', gap: 13 }}>
+      {installs.map((install) => (
+        <InstalledCard key={install.id} install={install as InstalledAgent & { agent: AgentRow }} onChanged={reload} />
+      ))}
+    </div>
+  )
+}
+
+function InstalledCard({
+  install,
+  onChanged,
+}: {
+  install: InstalledAgent & { agent: AgentRow }
+  onChanged: () => void
+}) {
+  const agent = install.agent
+
+  const uninstall = useMutation(async () => {
+    const result = await api.delete(`/v1/agents/${agent.id}/install`)
+    onChanged()
+    return result
+  })
+
+  const upgrade = useMutation(async () => {
+    const result = await api.post(`/v1/agents/${agent.id}/install`, {})
+    onChanged()
+    return result
+  })
+
+  const outdated = install.version !== agent.version
+
+  return (
+    <div className="ui-card" style={{ display: 'flex', flexDirection: 'column', padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 9 }}>
+        <div
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            background: 'var(--surface-hover)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--indigo-light)',
+            flex: 'none',
+          }}
+        >
+          <IconBot size={16} />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>{agent.name}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--foreground-muted)' }}>v{install.version}</div>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 3, padding: 3, background: 'var(--surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, width: 'fit-content', marginBottom: 22 }}>
-        {(['library', 'listings', 'sell'] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            style={{
-              padding: '6px 14px', borderRadius: 7, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', textTransform: 'capitalize',
-              background: tab === t ? 'var(--surface-active)' : 'transparent',
-              color: tab === t ? 'var(--foreground)' : 'var(--foreground-tertiary)',
-            }}
-          >
-            {t === 'sell' ? 'List an agent' : t}
+      <p style={{ fontSize: 12.5, color: 'var(--foreground-secondary)', flex: 1, minHeight: 34 }}>
+        {agent.tagline ?? 'No description'}
+      </p>
+
+      {outdated && (
+        <div
+          style={{
+            fontSize: 11.5,
+            color: '#fbbf24',
+            background: 'rgba(245,158,11,0.1)',
+            borderRadius: 7,
+            padding: '6px 9px',
+            marginTop: 9,
+          }}
+        >
+          Version {agent.version} is available.
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 7, marginTop: 12 }}>
+        {outdated && (
+          <button className="btn btn-primary btn-sm" disabled={upgrade.pending} onClick={() => void upgrade.run(undefined)}>
+            {upgrade.pending ? 'Updating…' : 'Update'}
           </button>
-        ))}
+        )}
+        <DownloadManifestButton agentId={agent.id} slug={agent.slug} />
+        <button
+          className="btn btn-ghost btn-sm"
+          style={{ marginLeft: 'auto', color: '#f87171' }}
+          disabled={uninstall.pending}
+          onClick={() => void uninstall.run(undefined)}
+        >
+          Remove
+        </button>
       </div>
 
-      {tab === 'sell' ? (
-        <SellForm onCreated={() => { setTab('listings'); load() }} />
-      ) : loading ? (
-        <SkeletonList rows={3} />
-      ) : error ? (
-        <ErrorState message={error} onRetry={load} />
-      ) : tab === 'library' ? (
-        owned.length === 0 ? (
-          <EmptyState icon={<IconBot size={22} />} title="No agents yet" description="Agents you buy or claim will appear here, ready to download and deploy." action={<Link href="/marketplace" className="btn btn-primary btn-sm">Browse marketplace</Link>} />
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}>
-            {owned.map((a) => (
-              <div key={a.id} className="ui-card" style={{ display: 'flex', flexDirection: 'column' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--surface-active)', color: 'var(--indigo-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IconBot size={17} /></div>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>{a.name}</div>
-                    <div style={{ fontSize: 12, color: 'var(--foreground-tertiary)' }}>{CATEGORY_LABELS[a.category] || a.category}</div>
-                  </div>
-                </div>
-                <p style={{ fontSize: 13, color: 'var(--foreground-secondary)', flex: 1, lineHeight: 1.5 }}>{a.tagline}</p>
-                <a href={`/api/marketplace/agents/${a.id}/manifest`} className="btn btn-secondary btn-sm" style={{ marginTop: 12, width: '100%' }}>
-                  <IconDownload size={15} /> Download
-                </a>
-              </div>
-            ))}
-          </div>
-        )
-      ) : (
-        listings.length === 0 ? (
-          <EmptyState icon={<IconBot size={22} />} title="No listings yet" description="List an agent to start selling. You keep 90% of every sale." action={<button onClick={() => setTab('sell')} className="btn btn-primary btn-sm">List an agent</button>} />
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {listings.map((l) => (
-              <div key={l.id} className="ui-card" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--surface-active)', color: 'var(--indigo-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><IconBot size={17} /></div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{l.name}</div>
-                  <div style={{ fontSize: 12.5, color: 'var(--foreground-tertiary)' }}>{formatPrice(l.price_cents, l.currency)} · {l.sales_count} sales</div>
-                </div>
-                <span className={`badge ${l.status === 'listed' ? 'badge-success' : 'badge-neutral'}`}>{l.status}</span>
-                {l.status === 'listed' && (
-                  <Link href={`/marketplace/${l.slug}`} className="btn btn-ghost btn-sm">View <IconArrowRight size={14} /></Link>
-                )}
-              </div>
-            ))}
-          </div>
-        )
+      {(uninstall.error || upgrade.error) && (
+        <div style={{ fontSize: 11.5, color: '#f87171', marginTop: 8 }}>
+          {uninstall.error ?? upgrade.error}
+        </div>
       )}
     </div>
   )
 }
 
-function SellForm({ onCreated }: { onCreated: () => void }) {
-  const supabase = createClientComponentClient()
-  const [name, setName] = useState('')
-  const [tagline, setTagline] = useState('')
-  const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('automation')
-  const [price, setPrice] = useState('')
-  const [caps, setCaps] = useState<string[]>([])
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+// ─── LISTINGS ────────────────────────────────────────────────
 
-  const inputStyle: React.CSSProperties = { width: '100%', height: 38, padding: '0 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--foreground)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none' }
-  const labelStyle: React.CSSProperties = { display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--foreground-secondary)', marginBottom: 6 }
+function Listings({ state }: { state: ReturnType<typeof useApiList<AgentRow>> }) {
+  const { items, loading, error, reload } = state
 
-  const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48)
+  if (loading) return <SkeletonList rows={3} />
+  if (error) return <ErrorState message={error} onRetry={reload} />
 
-  const toggleCap = (c: string) => setCaps((p) => (p.includes(c) ? p.filter((x) => x !== c) : [...p, c]))
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    if (!name.trim()) { setError('Give your agent a name.'); return }
-    if (caps.length === 0) { setError('Pick at least one capability.'); return }
-    const priceCents = Math.round(parseFloat(price || '0') * 100)
-    if (Number.isNaN(priceCents) || priceCents < 0) { setError('Enter a valid price (0 for free).'); return }
-
-    setSaving(true)
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Please sign in.')
-
-      const slug = `${slugify(name)}-${Math.random().toString(36).slice(2, 6)}`
-
-      const { data: agent, error: insErr } = await supabase
-        .from('marketplace_agents')
-        .insert({
-          seller_id: user.id, slug, name: name.trim(), tagline: tagline.trim() || null,
-          description: description.trim() || null, category, capabilities: caps,
-          price_cents: priceCents, status: 'listed',
-        })
-        .select('id, slug, name, version')
-        .single()
-      if (insErr) throw new Error(insErr.message)
-
-      const manifest = {
-        schema: 'taskpilot.agent/v1',
-        name: agent.name, slug: agent.slug, version: agent.version || '1.0.0',
-        role: category, description: description.trim() || tagline.trim(),
-        capabilities: caps,
-        harness: { model: 'gpt-4.1-mini', token_budget_per_run: 2000, memory: { namespace: agent.slug, ttl_hours: 24 }, tools: caps },
-        triggers: [{ type: 'manual', surface: 'sidebar' }],
-        workflow: caps.map((c, i) => ({ step: i + 1, action: c })),
-        deploy: { targets: ['extension', 'dashboard'], min_plan: 'free' },
-      }
-
-      const { error: manErr } = await supabase.from('agent_manifests').insert({ agent_id: agent.id, manifest })
-      if (manErr) throw new Error(manErr.message)
-
-      onCreated()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not create your listing.')
-    } finally {
-      setSaving(false)
-    }
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        icon={<IconBot size={22} />}
+        title="You have no listings"
+        description="Build an agent in the studio, then publish it to the marketplace to start selling."
+        action={
+          <Link href="/dashboard/agents" className="btn btn-primary btn-sm">
+            Open agent studio <IconArrowRight size={13} />
+          </Link>
+        }
+      />
+    )
   }
 
+  const revenueCents = items.reduce((sum, agent) => sum + agent.sales_count * agent.price_cents, 0)
+  const grossRevenue = revenueCents / 100
+
   return (
-    <form onSubmit={handleSubmit} className="ui-card" style={{ maxWidth: 620, display: 'flex', flexDirection: 'column', gap: 16, padding: 24 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <div>
-          <label style={labelStyle}>Agent name</label>
-          <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Lead Capture Pro" />
-        </div>
-        <div>
-          <label style={labelStyle}>Price (USD)</label>
-          <input style={inputStyle} value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0 for free" inputMode="decimal" />
-        </div>
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 11, marginBottom: 20 }}>
+        <Stat label="Listings" value={items.length} />
+        <Stat label="Installs" value={items.reduce((s, a) => s + a.install_count, 0)} />
+        <Stat label="Runs" value={items.reduce((s, a) => s + a.run_count, 0)} />
+        <Stat
+          label="Gross sales"
+          value={`$${grossRevenue.toFixed(2)}`}
+          // Sellers keep 90%; the platform fee is 10% of each sale.
+          hint={`You keep $${(grossRevenue * 0.9).toFixed(2)}`}
+        />
       </div>
 
-      <div>
-        <label style={labelStyle}>Tagline</label>
-        <input style={inputStyle} value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder="One line that sells it" maxLength={90} />
-      </div>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {items.map((agent) => (
+          <div key={agent.id} className="ui-card" style={{ padding: 15, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontWeight: 600, fontSize: 14 }}>{agent.name}</span>
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    padding: '2px 7px',
+                    borderRadius: 20,
+                    background: agent.status === 'listed' ? 'rgba(34,197,94,0.15)' : 'rgba(148,163,184,0.15)',
+                    color: agent.status === 'listed' ? '#4ade80' : '#94a3b8',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  {agent.status}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 14, marginTop: 5, fontSize: 11.5, color: 'var(--foreground-muted)' }}>
+                <span>{agent.install_count} installs</span>
+                <span>{agent.sales_count} sales</span>
+                <span>{agent.run_count} runs</span>
+                {agent.rating_count > 0 && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <IconStar size={11} /> {agent.rating_avg}
+                  </span>
+                )}
+              </div>
+            </div>
 
-      <div>
-        <label style={labelStyle}>Description</label>
-        <textarea style={{ ...inputStyle, height: 84, padding: '10px 12px', resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What it does, and who it's for." />
-      </div>
+            <span style={{ fontSize: 13, fontWeight: 500 }}>{formatPrice(agent.price_cents, agent.currency)}</span>
 
-      <div>
-        <label style={labelStyle}>Category</label>
-        <select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)}>
-          {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+            <Link href={`/marketplace/${agent.slug}`} className="btn btn-ghost btn-sm">
+              View
+            </Link>
+          </div>
+        ))}
       </div>
+    </>
+  )
+}
 
-      <div>
-        <label style={labelStyle}>Capabilities <span style={{ color: 'var(--foreground-muted)' }}>· these become the agent&apos;s workflow steps</span></label>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-          {CAPABILITIES.map((c) => {
-            const on = caps.includes(c)
-            return (
-              <button key={c} type="button" onClick={() => toggleCap(c)} style={{
-                padding: '6px 11px', borderRadius: 'var(--radius-full)', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-code)',
-                background: on ? 'rgba(109,118,245,0.14)' : 'var(--surface)',
-                border: `1px solid ${on ? 'rgba(109,118,245,0.3)' : 'var(--border-subtle)'}`,
-                color: on ? 'var(--indigo-light)' : 'var(--foreground-tertiary)',
-              }}>{c}</button>
-            )
-          })}
-        </div>
+function Stat({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
+  return (
+    <div className="ui-card" style={{ padding: 14 }}>
+      <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--foreground-muted)' }}>
+        {label}
       </div>
-
-      {error && <p role="alert" style={{ fontSize: 13, color: '#f87171', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '8px 12px' }}>{error}</p>}
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button type="submit" disabled={saving} className="btn btn-primary">{saving ? 'Publishing…' : 'Publish listing'}</button>
-        <span style={{ fontSize: 12.5, color: 'var(--foreground-tertiary)' }}>You keep 90% of every sale. TaskPilot retains 10%.</span>
-      </div>
-    </form>
+      <div style={{ fontSize: 21, fontWeight: 600, marginTop: 4 }}>{value}</div>
+      {hint && <div style={{ fontSize: 11, color: 'var(--foreground-muted)', marginTop: 2 }}>{hint}</div>}
+    </div>
   )
 }

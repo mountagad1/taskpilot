@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { api } from '@/lib/client/api'
 import { EmptyState, ErrorState, Skeleton } from '@/components/states'
 
 interface ParseResult {
@@ -61,7 +61,6 @@ function confidenceColor(c: number): string {
 }
 
 export default function SmartPastePage() {
-  const supabase = createClientComponentClient()
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -74,41 +73,22 @@ export default function SmartPastePage() {
     setResult(null)
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      const res = await fetch('/api/ai/smart-paste', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clipboardText: text.slice(0, 5000),
-          pageContext: {
-            url: 'https://app.taskpilot.cc/dashboard/smart-paste',
-            title: 'Smart Paste Playground',
-            forms: [],
-            pageType: 'form',
-          },
-          sessionToken: session?.access_token,
-        }),
+      const data = await api.post<ParseResult>('/v1/ai/smart-paste', {
+        clipboardText: text.slice(0, 5000),
+        pageContext: {
+          url: 'https://taskpilot.cc/dashboard/smart-paste',
+          title: 'Smart Paste Playground',
+          forms: [],
+        },
       })
 
-      if (res.status === 429) {
-        throw new Error('Rate limit reached. Wait a moment and try again.')
-      }
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.error || `Request failed (${res.status})`)
-      }
-
-      const data: ParseResult = await res.json()
       setResult(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
       setLoading(false)
     }
-  }, [text, supabase])
+  }, [text])
 
   const fieldEntries = result
     ? Object.entries(result.fields).filter(([, v]) => v)

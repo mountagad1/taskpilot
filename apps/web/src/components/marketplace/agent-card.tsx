@@ -10,7 +10,7 @@ export interface AgentCardData {
   price_cents: number
   currency: string
   sales_count: number
-  seller_id: string | null
+  owner_id: string | null
   capabilities: string[]
 }
 
@@ -30,7 +30,7 @@ export function AgentCard({ agent }: { agent: AgentCardData }) {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
         <h3 style={{ fontSize: 15.5, fontWeight: 600, letterSpacing: '-0.01em' }}>{agent.name}</h3>
-        {agent.seller_id === null && (
+        {agent.owner_id === null && (
           <span title="Official TaskPilot agent" style={{ display: 'inline-flex', color: 'var(--indigo-light)' }}><IconCheck size={14} /></span>
         )}
       </div>

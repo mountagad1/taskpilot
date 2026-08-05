@@ -82,7 +82,7 @@ export default function SidebarPage() {
       )
 
       try {
-        const res = await fetch('/api/ai/process', {
+        const res = await fetch('/v1/ai/process', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

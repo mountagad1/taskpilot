@@ -1,191 +1,376 @@
 'use client'
 
+// ============================================================
+// TASKPILOT — ANALYTICS
+// apps/web/src/app/dashboard/analytics/page.tsx
+//
+// Real usage derived from run history: throughput, success rate, latency and
+// AI cost, plus how any published agents are performing.
+// ============================================================
+
 import { useState } from 'react'
+import Link from 'next/link'
 
-const MOCK_DAILY = [
-  { day: 'Mon', actions: 24, tokens: 12400, cost: 0.018 },
-  { day: 'Tue', actions: 38, tokens: 19800, cost: 0.029 },
-  { day: 'Wed', actions: 31, tokens: 15200, cost: 0.022 },
-  { day: 'Thu', actions: 52, tokens: 28100, cost: 0.042 },
-  { day: 'Fri', actions: 45, tokens: 23700, cost: 0.035 },
-  { day: 'Sat', actions: 18, tokens: 8900, cost: 0.013 },
-  { day: 'Sun', actions: 12, tokens: 6200, cost: 0.009 },
+import { useApi } from '@/lib/client/api'
+import { ErrorState, SkeletonCard } from '@/components/states'
+import { IconChart } from '@/components/ui/icons'
+
+interface Analytics {
+  period_days: number
+  totals: {
+    runs: number
+    completed: number
+    failed: number
+    success_rate: number | null
+    tokens: number
+    cost_usd: number
+    avg_duration_ms: number | null
+    median_duration_ms: number | null
+  }
+  daily: Array<{ date: string; runs: number; completed: number; failed: number; cost_usd: number }>
+  top_domains: Array<{ name: string; count: number }>
+  published: {
+    agents: number
+    installs: number
+    runs: number
+    sales: number
+    gross_cents: number
+    top: Array<{ id: string; name: string; slug: string; run_count: number; install_count: number }>
+  }
+}
+
+const RANGES = [
+  { days: 7, label: '7 days' },
+  { days: 30, label: '30 days' },
+  { days: 90, label: '90 days' },
 ]
-
-const TASK_BREAKDOWN = [
-  { task: 'Smart Paste', count: 87, pct: 38 },
-  { task: 'Summarize', count: 54, pct: 24 },
-  { task: 'Extract Data', count: 43, pct: 19 },
-  { task: 'Generate Reply', count: 28, pct: 12 },
-  { task: 'Translate', count: 16, pct: 7 },
-]
-
-const maxActions = Math.max(...MOCK_DAILY.map((d) => d.actions))
 
 export default function AnalyticsPage() {
-  const [period, setPeriod] = useState<'7d' | '30d' | '90d'>('7d')
-
-  const totalActions = MOCK_DAILY.reduce((a, d) => a + d.actions, 0)
-  const totalTokens = MOCK_DAILY.reduce((a, d) => a + d.tokens, 0)
-  const totalCost = MOCK_DAILY.reduce((a, d) => a + d.cost, 0)
-  const cacheHitRate = 0.34
+  const [days, setDays] = useState(30)
+  const { data, loading, error, reload } = useApi<Analytics>(`/v1/analytics?days=${days}`, [days])
 
   return (
-    <div className="p-8 space-y-8 max-w-6xl">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div style={{ padding: 28, maxWidth: 960 }}>
+      <header style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 22 }}>
         <div>
-          <h1 className="text-2xl font-heading font-bold text-foreground">Analytics</h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--foreground-secondary)' }}>
-            AI usage, token costs, and productivity metrics
+          <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em' }}>Analytics</h1>
+          <p style={{ fontSize: 14, color: 'var(--foreground-secondary)', marginTop: 4 }}>
+            What TaskPilot actually ran for you, and what it cost.
           </p>
         </div>
-        <div className="flex gap-1 glass rounded-lg p-1">
-          {(['7d', '30d', '90d'] as const).map((p) => (
+
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 5, marginRight: 46 }}>
+          {RANGES.map((range) => (
             <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className="px-3 py-1.5 rounded-md text-xs font-heading font-semibold transition-all"
+              key={range.days}
+              onClick={() => setDays(range.days)}
               style={{
-                background: period === p ? 'var(--surface-active)' : 'transparent',
-                color: period === p ? 'var(--foreground)' : 'var(--foreground-tertiary)',
+                padding: '5px 12px',
+                borderRadius: 8,
+                fontSize: 12.5,
+                cursor: 'pointer',
+                border: `1px solid ${days === range.days ? 'rgba(99,102,241,0.45)' : 'var(--border-subtle)'}`,
+                background: days === range.days ? 'rgba(99,102,241,0.15)' : 'var(--surface)',
+                color: days === range.days ? 'var(--indigo-light)' : 'var(--foreground-secondary)',
               }}
             >
-              {p}
+              {range.label}
             </button>
           ))}
         </div>
-      </div>
+      </header>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Actions', value: totalActions, suffix: '', color: 'var(--indigo-light)' },
-          { label: 'Tokens Used', value: (totalTokens / 1000).toFixed(1) + 'k', suffix: '', color: 'var(--cyan)' },
-          { label: 'AI Cost', value: `$${totalCost.toFixed(3)}`, suffix: '', color: '#f59e0b' },
-          { label: 'Cache Hit Rate', value: `${(cacheHitRate * 100).toFixed(0)}%`, suffix: ' savings', color: '#10b981' },
-        ].map((card, i) => (
-          <div key={i} className="glass rounded-xl p-5">
-            <p className="text-xs font-medium mb-2" style={{ color: 'var(--foreground-tertiary)' }}>
-              {card.label}
-            </p>
-            <p className="text-2xl font-heading font-bold" style={{ color: card.color }}>
-              {card.value}
-              {card.suffix && (
-                <span className="text-xs ml-1" style={{ color: 'var(--foreground-tertiary)' }}>
-                  {card.suffix}
-                </span>
-              )}
-            </p>
+      {loading ? (
+        <div style={{ display: 'grid', gap: 13 }}>
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      ) : error ? (
+        <ErrorState message={error} onRetry={reload} />
+      ) : !data ? null : data.totals.runs === 0 ? (
+        <div className="ui-card" style={{ padding: 40, textAlign: 'center' }}>
+          <div style={{ color: 'var(--foreground-tertiary)', marginBottom: 12 }}>
+            <IconChart size={26} />
           </div>
-        ))}
-      </div>
+          <div style={{ fontWeight: 600, marginBottom: 5 }}>No runs in this period</div>
+          <p style={{ fontSize: 13, color: 'var(--foreground-secondary)', maxWidth: 380, margin: '0 auto' }}>
+            Open the extension on any page and tell TaskPilot what to do. Usage appears here as soon
+            as the first run finishes.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))',
+              gap: 12,
+              marginBottom: 22,
+            }}
+          >
+            <Stat label="Runs" value={data.totals.runs.toLocaleString()} />
+            <Stat
+              label="Success rate"
+              value={data.totals.success_rate === null ? '—' : `${data.totals.success_rate}%`}
+              tone={successTone(data.totals.success_rate)}
+            />
+            <Stat
+              label="Median duration"
+              value={data.totals.median_duration_ms ? formatDuration(data.totals.median_duration_ms) : '—'}
+              hint={data.totals.avg_duration_ms ? `mean ${formatDuration(data.totals.avg_duration_ms)}` : undefined}
+            />
+            <Stat label="Tokens" value={compact(data.totals.tokens)} />
+            <Stat label="AI cost" value={`$${data.totals.cost_usd.toFixed(4)}`} />
+          </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <section className="ui-card" style={{ padding: 20, marginBottom: 22 }}>
+            <h2 style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Daily activity</h2>
+            <ActivityChart daily={data.daily} />
+          </section>
 
-        {/* Bar Chart - Actions */}
-        <div className="lg:col-span-2 glass rounded-xl p-6">
-          <h2 className="font-heading font-semibold text-sm mb-5" style={{ color: 'var(--foreground-secondary)' }}>
-            DAILY ACTIONS
-          </h2>
-          <div className="flex items-end gap-3 h-36">
-            {MOCK_DAILY.map((d, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
-                <p className="text-xs font-mono" style={{ color: 'var(--foreground-tertiary)' }}>
-                  {d.actions}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 14 }}>
+            <section className="ui-card" style={{ padding: 20 }}>
+              <h2 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Busiest sites</h2>
+
+              {data.top_domains.length === 0 ? (
+                <p style={{ fontSize: 12.5, color: 'var(--foreground-muted)' }}>No sites recorded yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {data.top_domains.map((domain) => (
+                    <div key={domain.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span
+                        style={{
+                          fontSize: 12.5,
+                          minWidth: 0,
+                          flex: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {domain.name}
+                      </span>
+                      <div
+                        style={{
+                          width: 100,
+                          height: 5,
+                          borderRadius: 3,
+                          background: 'rgba(255,255,255,0.07)',
+                          overflow: 'hidden',
+                          flex: 'none',
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${(domain.count / data.top_domains[0].count) * 100}%`,
+                            background: 'linear-gradient(90deg,#6366f1,#a855f7)',
+                          }}
+                        />
+                      </div>
+                      <span
+                        style={{ fontSize: 11.5, color: 'var(--foreground-muted)', width: 30, textAlign: 'right' }}
+                      >
+                        {domain.count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="ui-card" style={{ padding: 20 }}>
+              <h2 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Your published agents</h2>
+
+              {data.published.agents === 0 ? (
+                <p style={{ fontSize: 12.5, color: 'var(--foreground-secondary)' }}>
+                  You have not published an agent yet.{' '}
+                  <Link href="/dashboard/agents" style={{ color: 'var(--indigo-light)', textDecoration: 'none' }}>
+                    Build one →
+                  </Link>
                 </p>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: 18, marginBottom: 13 }}>
+                    <Mini label="Installs" value={data.published.installs} />
+                    <Mini label="Runs" value={data.published.runs} />
+                    <Mini label="Sales" value={data.published.sales} />
+                    <Mini label="Gross" value={`$${(data.published.gross_cents / 100).toFixed(2)}`} />
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {data.published.top.map((agent) => (
+                      <Link
+                        key={agent.id}
+                        href={`/marketplace/${agent.slug}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          fontSize: 12.5,
+                          textDecoration: 'none',
+                          color: 'inherit',
+                          padding: '6px 9px',
+                          borderRadius: 7,
+                          background: 'var(--surface)',
+                        }}
+                      >
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {agent.name}
+                        </span>
+                        <span style={{ color: 'var(--foreground-muted)', fontSize: 11.5 }}>
+                          {agent.run_count} runs
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── CHART ───────────────────────────────────────────────────
+
+function ActivityChart({ daily }: { daily: Analytics['daily'] }) {
+  const peak = Math.max(...daily.map((d) => d.runs), 1)
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 130 }}>
+        {daily.map((day) => {
+          const total = (day.runs / peak) * 100
+          const failedPortion = (day.failed / peak) * 100
+
+          return (
+            <div
+              key={day.date}
+              title={`${day.date}: ${day.runs} runs (${day.completed} completed, ${day.failed} failed)`}
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'flex-end',
+                height: '100%',
+              }}
+            >
+              {/* Failures stack above successes so a bad day is obvious at a glance. */}
+              {day.failed > 0 && (
                 <div
-                  className="w-full rounded-t-sm transition-all"
                   style={{
-                    height: `${(d.actions / maxActions) * 100}%`,
-                    background: 'linear-gradient(to top, rgba(99,102,241,0.6), rgba(34,211,238,0.4))',
-                    minHeight: '4px',
+                    height: `${failedPortion}%`,
+                    background: '#ef4444',
+                    borderRadius: '3px 3px 0 0',
+                    minHeight: 2,
                   }}
                 />
-                <p className="text-xs" style={{ color: 'var(--foreground-tertiary)' }}>
-                  {d.day}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Task Breakdown */}
-        <div className="glass rounded-xl p-6">
-          <h2 className="font-heading font-semibold text-sm mb-5" style={{ color: 'var(--foreground-secondary)' }}>
-            TASK BREAKDOWN
-          </h2>
-          <div className="space-y-3.5">
-            {TASK_BREAKDOWN.map((item, i) => (
-              <div key={i}>
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-heading font-semibold text-foreground">{item.task}</p>
-                  <p className="text-xs font-mono" style={{ color: 'var(--foreground-secondary)' }}>
-                    {item.count}
-                  </p>
-                </div>
-                <div className="h-1.5 rounded-full" style={{ background: 'var(--surface-hover)' }}>
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${item.pct}%`,
-                      background: 'var(--gradient-brand)',
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+              )}
+              <div
+                style={{
+                  height: `${Math.max(total - failedPortion, 0)}%`,
+                  background: day.runs
+                    ? 'linear-gradient(180deg,#818cf8,#6366f1)'
+                    : 'rgba(255,255,255,0.05)',
+                  borderRadius: day.failed > 0 ? '0 0 3px 3px' : 3,
+                  minHeight: day.runs ? 2 : 1,
+                }}
+              />
+            </div>
+          )
+        })}
       </div>
 
-      {/* Token Cost Table */}
-      <div className="glass rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
-          <h2 className="font-heading font-semibold text-sm" style={{ color: 'var(--foreground-secondary)' }}>
-            TOKEN USAGE BY DAY
-          </h2>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Day', 'Actions', 'Tokens', 'Cost', 'Cached', 'Net Cost'].map((h) => (
-                <th
-                  key={h}
-                  className="px-6 py-3 text-left text-xs font-heading font-semibold"
-                  style={{ color: 'var(--foreground-tertiary)' }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {MOCK_DAILY.map((d, i) => {
-              const cached = Math.floor(d.tokens * cacheHitRate)
-              const net = d.cost * (1 - cacheHitRate)
-              return (
-                <tr
-                  key={i}
-                  style={{ borderBottom: i < MOCK_DAILY.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}
-                >
-                  <td className="px-6 py-3 font-heading font-semibold text-foreground">{d.day}</td>
-                  <td className="px-6 py-3 font-mono text-foreground">{d.actions}</td>
-                  <td className="px-6 py-3 font-mono text-foreground">{d.tokens.toLocaleString()}</td>
-                  <td className="px-6 py-3 font-mono text-foreground">${d.cost.toFixed(3)}</td>
-                  <td className="px-6 py-3 font-mono" style={{ color: '#10b981' }}>
-                    {(cacheHitRate * 100).toFixed(0)}%
-                  </td>
-                  <td className="px-6 py-3 font-mono" style={{ color: 'var(--cyan)' }}>
-                    ${net.toFixed(3)}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          marginTop: 8,
+          fontSize: 11,
+          color: 'var(--foreground-muted)',
+        }}
+      >
+        <span>{formatDate(daily[0]?.date)}</span>
+        <span>{formatDate(daily[daily.length - 1]?.date)}</span>
       </div>
     </div>
   )
+}
+
+// ─── PRIMITIVES ──────────────────────────────────────────────
+
+function Stat({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string
+  value: string
+  hint?: string
+  tone?: string
+}) {
+  return (
+    <div className="ui-card" style={{ padding: 16 }}>
+      <div
+        style={{
+          fontSize: 11,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          color: 'var(--foreground-muted)',
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 23, fontWeight: 600, marginTop: 5, color: tone ?? 'inherit' }}>{value}</div>
+      {hint && <div style={{ fontSize: 11, color: 'var(--foreground-muted)', marginTop: 3 }}>{hint}</div>}
+    </div>
+  )
+}
+
+function Mini({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 10.5,
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          color: 'var(--foreground-muted)',
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 15, fontWeight: 600, marginTop: 2 }}>{value}</div>
+    </div>
+  )
+}
+
+// ─── FORMATTING ──────────────────────────────────────────────
+
+function successTone(rate: number | null): string | undefined {
+  if (rate === null) return undefined
+  if (rate >= 90) return '#4ade80'
+  if (rate >= 70) return '#fbbf24'
+  return '#f87171'
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`
+}
+
+function compact(value: number): string {
+  if (value < 1000) return String(value)
+  if (value < 1_000_000) return `${(value / 1000).toFixed(1)}k`
+  return `${(value / 1_000_000).toFixed(2)}M`
+}
+
+function formatDate(iso?: string): string {
+  if (!iso) return ''
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }

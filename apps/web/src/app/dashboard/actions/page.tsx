@@ -13,7 +13,8 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { apiList } from '@/lib/client/api'
+import { isSignedIn } from '@/lib/client/auth'
 import { EmptyState, ErrorState, SkeletonList, DemoBanner } from '@/components/states'
 
 interface ActionRow {
@@ -86,7 +87,6 @@ function relativeTime(iso?: string | null): string {
 }
 
 export default function BrowserActionsPage() {
-  const supabase = createClientComponentClient()
   const [tab, setTab] = useState<Tab>('library')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -97,23 +97,14 @@ export default function BrowserActionsPage() {
     setLoading(true)
     setError(null)
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) {
+      if (!isSignedIn()) {
         // Not signed in — show templates so the page is still useful.
         setActions(TEMPLATES)
         setUsingTemplates(true)
         return
       }
 
-      const { data, error: dbError } = await supabase
-        .from('workflows')
-        .select('id, name, description, trigger_type, steps, last_run_at, run_count, is_active, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-
-      if (dbError) throw new Error(dbError.message)
+      const { items: data } = await apiList<Record<string, unknown>>('/v1/workflows')
 
       if (!data || data.length === 0) {
         setActions(TEMPLATES)
@@ -139,7 +130,7 @@ export default function BrowserActionsPage() {
     } finally {
       setLoading(false)
     }
-  }, [supabase])
+  }, [])
 
   useEffect(() => {
     load()

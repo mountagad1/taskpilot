@@ -3,7 +3,7 @@
 import { Suspense, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { signUp, isPendingConfirmation, AuthError } from '@/lib/client/auth'
 import { notifyExtensionSignedIn } from '@/lib/extension-bridge'
 
 const inputStyle: React.CSSProperties = {
@@ -38,7 +38,6 @@ export default function SignupPage() {
 function SignupForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const supabase = createClientComponentClient()
   const plan = searchParams.get('plan')
 
   const [name, setName] = useState('')
@@ -59,34 +58,29 @@ function SignupForm() {
 
     setLoading(true)
 
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: name },
-        emailRedirectTo: `${window.location.origin}/dashboard`,
-      },
-    })
+    try {
+      const result = await signUp(email, password, name)
 
-    setLoading(false)
+      // With email confirmation enabled there is no session yet.
+      if (isPendingConfirmation(result)) {
+        setCheckEmail(true)
+        return
+      }
 
-    if (signUpError) {
-      setError(signUpError.message)
-      return
-    }
-
-    if (data.session && data.user?.email) {
       notifyExtensionSignedIn({
-        userId: data.user.id,
-        email: data.user.email,
-        authToken: data.session.access_token,
+        userId: result.user.id,
+        email: result.user.email,
+        authToken: result.access_token,
+        plan: result.user.plan,
       })
+
       router.push(plan ? `/dashboard?plan=${plan}` : '/dashboard')
       router.refresh()
-      return
+    } catch (err) {
+      setError(err instanceof AuthError ? err.message : 'Could not create your account')
+    } finally {
+      setLoading(false)
     }
-
-    setCheckEmail(true)
   }
 
   if (checkEmail) {
