@@ -1,0 +1,21 @@
+{
+  "name": "@taskpilot/examples",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Runnable examples for the TaskPilot SDK",
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "publish-agent": "tsx publish-agent.ts",
+    "run-agent": "tsx run-agent.ts",
+    "bulk-extract": "tsx bulk-extract.ts"
+  },
+  "dependencies": {
+    "@taskpilot/sdk": "workspace:*",
+    "@taskpilot/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.4.0"
+  }
+}

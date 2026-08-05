@@ -1,0 +1,34 @@
+{
+  "name": "@taskpilot/sdk",
+  "version": "1.0.0",
+  "description": "Build, publish and run TaskPilot browser agents",
+  "license": "MIT",
+  "keywords": [
+    "taskpilot",
+    "browser-automation",
+    "ai-agents",
+    "sdk"
+  ],
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./define": "./src/define.ts"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@taskpilot/api-client": "workspace:*",
+    "@taskpilot/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "type": "module"
+}
