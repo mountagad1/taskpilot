@@ -10,3 +10,5 @@ coverage
 .DS_Store
 .vercel
 *.zip
+services/api/.env
+apps/web/.env.local

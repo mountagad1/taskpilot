@@ -1,299 +1,225 @@
-# TaskPilot — The AI Operating Layer for the Browser
+# TaskPilot — The AI Agent for Your Browser
 
-> **"Talk to any webpage instantly."**
-
-TaskPilot is a venture-scale AI browser extension that transforms every webpage into an intelligent AI workspace. Autofill forms, extract structured data, convert webpages into documents, and automate browser workflows with AI.
+Turn natural language into real browser actions. Fill forms, extract structured
+data, navigate sites, generate replies, move files and export results — then
+package any of it as a reusable AI agent and publish it to a marketplace.
 
 ---
 
-## Architecture Overview
+## What's in here
+
+TaskPilot follows a **public frontend / private backend** split.
+
+**Public** — nothing secret lives here:
+
+| Package | What it is |
+|---|---|
+| `apps/web` | Next.js 14 marketing site and dashboard |
+| `apps/extension` | Chrome/Edge/Brave/Arc extension (Manifest V3) |
+| `packages/shared` | Domain types, manifest validation, capability catalogue |
+| `packages/browser-tools` | Element resolver, action executor, extraction, exports |
+| `packages/api-client` | Typed REST transport |
+| `packages/sdk` | Developer SDK — author, publish and run agents |
+| `examples/` | Runnable SDK scripts |
+
+**Private** — the only thing holding credentials:
+
+| Package | What it is |
+|---|---|
+| `services/api` | AI runtime, agent registry, marketplace, authentication, billing, queue workers, database |
+
+The boundary is real: `services/api` imports nothing from `apps/`, and shares
+only `@taskpilot/shared`. [RUNNING.md](RUNNING.md#splitting-into-two-repositories)
+has the two-command extraction into separate repositories.
+
+---
+
+## How it fits together
 
 ```
-taskpilot/
-├── apps/
-│   ├── web/                    # Next.js 14 landing page + dashboard
-│   └── extension/              # Chrome Extension (Manifest V3 + Plasmo)
-├── packages/
-│   ├── ai-engine/              # AI orchestration, token optimizer, semantic cache
-│   ├── browser-tools/          # Smart paste, tool execution, export utilities
-│   ├── shared/                 # Types, constants, utilities
-│   └── ui/                     # Design system components
-├── supabase/
-│   ├── migrations/             # PostgreSQL schema
-│   └── functions/              # Edge Functions (ai-proxy)
-├── scripts/
-│   └── package-extension.js   # Extension packager
-└── docs/                       # Technical documentation
+  Natural language  ─────────────────────────────────────────────┐
+                                                                 │
+  ┌─────────────────── AI RUNTIME (server) ───────────────────┐   │
+  │  Planner    heuristics first, LLM only when needed        │◄──┘
+  │  Reasoner   rules first, LLM only for ambiguity           │
+  │  Memory     per-run scratchpad + namespaced long-term     │
+  │  Run loop   budgets for steps, tokens and wall clock      │
+  └───────────────────────────┬───────────────────────────────┘
+                              │  ActionPlan (JSON, validated)
+                              ▼
+  ┌──────────── BROWSER AUTOMATION (extension) ───────────────┐
+  │  Executor   resolves elements, drives the DOM             │
+  │  Host       tabs, downloads, screenshots, clipboard       │
+  └───────────────────────────┬───────────────────────────────┘
+                              │  per-step results
+                              ▼
+                     Run history · analytics · cost
 ```
 
----
+**The server plans; the browser executes.** The backend never holds the user's
+session cookies — it issues a plan, and the extension carries it out inside the
+page the user is already authenticated on. Every step's outcome is reported
+back, which is what makes runs debuggable rather than a black box.
 
-## Tech Stack
+### Cost model
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 14, React, TypeScript, TailwindCSS, Framer Motion |
-| Extension | Plasmo Framework, Manifest V3, Shadow DOM |
-| Backend | Supabase (PostgreSQL + Edge Functions) |
-| AI | OpenAI GPT-4.1-mini / GPT-4.1 + structured outputs |
-| Payments | Stripe (subscriptions, webhooks, portal) |
-| Cache | Upstash Redis (semantic cache + rate limiting) |
-| Analytics | PostHog |
-| Hosting | Vercel (edge-first deployment) |
+The planner tries a set of heuristic rules before it reaches for a model.
+"Summarise this page", "get every email", "export the table to CSV" and roughly
+a dozen other shapes resolve to a plan with **zero tokens spent**. The reasoner
+works the same way: a succeeded step, a retryable failure, an optional step that
+failed — all decided by rules. Only genuine ambiguity costs a model call.
 
 ---
 
-## Prerequisites
-
-- Node.js ≥ 20
-- npm ≥ 9
-- Supabase CLI: `npm i -g supabase`
-- Vercel CLI: `npm i -g vercel`
-- Chrome browser (for extension development)
-
----
-
-## Quick Start
-
-### 1. Clone & Install
+## Quick start
 
 ```bash
-git clone https://github.com/your-org/taskpilot.git
-cd taskpilot
-npm install
+pnpm install
+
+pnpm dev:api    # private backend  → http://localhost:4000
+pnpm dev:web    # public frontend  → http://localhost:3000
 ```
 
-### 2. Configure Environment
+Both start **without any credentials**. Missing services disable the features
+that need them and return `503 not_configured` — nothing crashes, and
+`GET /health` reports what is live.
+
+| Missing | Behaviour |
+|---|---|
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Heuristic planning still works; anything needing a model says so |
+| `UPSTASH_REDIS_*` | Rate limiting and caching fall back to per-process memory |
+| `STRIPE_*` | Billing endpoints report `not_configured` |
+| Supabase keys | Pages render; data endpoints report `not_configured` |
+
+**[RUNNING.md](RUNNING.md) is the full guide** — credentials, the database,
+loading the extension, testing, deploying, and troubleshooting.
+
+---
+
+## Commands
 
 ```bash
-cp .env.example apps/web/.env.local
+pnpm dev:api        # backend in watch mode
+pnpm dev:web        # frontend in watch mode
+pnpm build          # production build of everything
+pnpm test           # 289 tests across 14 files
+pnpm type-check     # all 8 packages
+pnpm worker         # background job ticker
 ```
 
-Fill in all required values (see `.env.example` for descriptions):
-- `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY`
-- `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET`
-- `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`
-
-### 3. Initialize Supabase
+Target one suite:
 
 ```bash
-# Start local Supabase stack
-supabase start
-
-# Run migrations
-supabase db push
-
-# OR apply to production
-supabase db push --linked
-```
-
-### 4. Start Development
-
-```bash
-# Run web app (localhost:3000) + all packages
-npm run dev
-
-# Or with Turbo
-npx turbo dev --filter=web
-```
-
-### 5. Load Extension in Chrome
-
-```bash
-# Build extension
-cd apps/extension
-npm run build
-
-# In Chrome:
-# 1. Go to chrome://extensions
-# 2. Enable "Developer mode"
-# 3. Click "Load unpacked"
-# 4. Select apps/extension/dist/ folder
+pnpm test --project api
+pnpm test --project db
+pnpm test --project browser-tools
 ```
 
 ---
 
-## Deployment
+## Security model
 
-### Web App (Vercel)
+Third-party agents run with the user's browser session, so the trust boundary
+is taken seriously and enforced in more than one place.
+
+**Manifests are untrusted input.** `parseAgentManifest` is the only way a
+manifest reaches the runtime. It rejects unknown capabilities rather than
+dropping them, clamps budgets to platform ceilings, drops unknown top-level
+keys, and refuses a workflow step that calls something the listing never
+declared.
+
+**URLs are checked three times** — at manifest validation, at plan validation,
+and again in the executor immediately before navigating. `javascript:`, `data:`
+and `file:` are rejected at every layer.
+
+**Capabilities are intersected, never unioned.** A run may use only what the
+agent declared *and* what the caller's plan permits. Even a workflow baked into
+a published manifest is re-checked on every run.
+
+**Destructive actions need confirmation.** `navigate`, `download_file`,
+`upload_file` and `push_integration` pause the run by default. With no
+confirmation handler attached the run reports `awaiting_confirmation` rather
+than proceeding.
+
+**`close_tab` can only close tabs the run itself opened.**
+
+**RLS on every user-facing table**, tested by impersonating a real
+non-superuser role — because a superuser bypasses RLS unconditionally, so
+testing as one proves nothing.
+
+**The frontend holds no secrets.** No database credentials, no auth SDK, no
+model keys. It signs in through the API and keeps only a token pair.
+
+**API keys are stored as SHA-256 digests.** The plaintext is returned exactly
+once. A key can never mint or list other keys — that path is session-only, so a
+leaked credential cannot renew itself.
+
+**CSV injection is neutralised** on export: cells starting `=`, `+`, `-` or `@`
+are prefixed so a scraped page cannot execute a formula in someone's
+spreadsheet.
+
+---
+
+## Developer platform
 
 ```bash
-cd apps/web
-vercel --prod
-
-# Set environment variables in Vercel dashboard or via CLI:
-vercel env add OPENAI_API_KEY
-vercel env add SUPABASE_SERVICE_ROLE_KEY
-# ... (all vars from .env.example)
+npm install @taskpilot/sdk
 ```
 
-### Stripe Webhooks
+```ts
+import { TaskPilot, defineAgent } from '@taskpilot/sdk'
+
+const agent = defineAgent({
+  name: 'Email Harvester',
+  goal: 'Collect every email address on the page and export it as CSV',
+})
+  .workflow((s) => {
+    s.readPage('page').extractEmails('emails').export('emails', 'csv').finish('export')
+  })
+
+await new TaskPilot().publish(agent, { list: true })
+```
+
+- SDK reference: [`packages/sdk/README.md`](packages/sdk/README.md)
+- REST reference: [`docs/API.md`](docs/API.md)
+- Discovery document: `GET /v1`
+- Runnable scripts: [`examples/`](examples)
+
+---
+
+## Background worker
+
+Scheduled workflows, usage rollups and file sweeps run through a Postgres job
+queue claimed with `FOR UPDATE SKIP LOCKED`, so several workers can poll
+concurrently without collisions. Failures retry with exponential backoff, then
+park as `dead`. Jobs abandoned by a crashed worker are requeued after 15 minutes.
 
 ```bash
-# Local testing
-stripe listen --forward-to localhost:3000/api/stripe/webhook
-
-# Production: Add webhook endpoint in Stripe Dashboard
-# URL: https://taskpilot.cc/api/stripe/webhook
-# Events: checkout.session.completed, customer.subscription.*
+curl -X POST https://api.taskpilot.cc/v1/jobs/worker -H "X-Worker-Secret: $WORKER_SECRET"
 ```
 
-### Supabase Edge Functions
-
-```bash
-supabase functions deploy ai-proxy --project-ref your-project-ref
-```
-
-### Chrome Extension
-
-```bash
-node scripts/package-extension.js
-# Upload dist/taskpilot-extension-prod-*.zip to Chrome Web Store
-# https://chrome.google.com/webstore/devconsole
-```
+Point any scheduler at it. Set `WORKER_SECRET` to enable the endpoint — without
+it the route refuses to run rather than defaulting open.
 
 ---
 
-## Key Features
+## Testing
 
-### Phase 1: Smart Paste (MVP)
-- Clipboard text → intelligent form autofill
-- 3-layer parsing: Regex → Heuristics → AI
-- Supports HubSpot, Salesforce, Gmail, LinkedIn, Airtable, and any web form
-- Animated autofill with field highlight
-- `Alt+V` keyboard shortcut
+| Suite | Covers |
+|---|---|
+| `shared` | Manifest validation, the trust boundary |
+| `api` | Planning, reasoning verdicts, memory interpolation, the run loop under budgets/retries/replanning/confirmation, cron, API keys, and the real Hono app driven through `app.request()` |
+| `browser-tools` | The executor against a real DOM: targeting, framework-visible input, extraction, URL scheme enforcement, export serialisation |
+| `sdk` | Agent authoring, capability derivation, selector inference |
+| `web` | The auth client: token refresh, concurrent-refresh collapsing, corrupt storage |
+| `db` | Every migration executed on real PostgreSQL: constraints, triggers, the job queue, and RLS enforced as a non-superuser |
 
-### Phase 2: Universal AI Sidebar
-- Floating sidebar on every webpage (`Alt+S`)
-- Summarize, translate, rewrite, extract data
-- AI reply assistant for email/LinkedIn/CRMs
-- Export to CSV / Excel / JSON
-- Saved prompts + workflow history
-
-### Phase 3: Browser Actions
-- Extract all products, emails, prices, leads
-- Push to HubSpot, Salesforce, Notion
-- Workflow automation engine
-- Multi-step browser task planning
-
----
-
-## Business Model
-
-| Plan | Price | Features |
-|------|-------|----------|
-| Free | $0 | 30 AI actions/mo, 5 exports/mo, basic smart paste |
-| Pro | $19/mo ($190/yr) | Unlimited everything + CRM integrations + browser actions |
-| Enterprise | Custom | SSO, team management, dedicated support, API access |
-
----
-
-## API Routes
-
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/ai/smart-paste` | POST | Parse clipboard + map to form fields |
-| `/api/ai/process` | POST | AI task execution (summarize, extract, etc.) |
-| `/api/stripe/webhook` | POST | Stripe event handler |
-| `/api/auth/session` | GET/POST/DELETE | Session management |
-| `/api/export` | POST | Export data as CSV/Excel/JSON |
-
----
-
-## Database Schema (Supabase)
-
-Key tables:
-
-- `profiles` — user accounts with plan info
-- `anonymous_sessions` — anonymous usage tracking (no forced signup)
-- `subscriptions` — Stripe subscription state
-- `ai_requests` — all AI request logs (cost tracking)
-- `usage_periods` — monthly usage counters
-- `productivity_metrics` — daily metrics per user
-- `workflows` — saved automation workflows
-- `response_cache` — semantic cache entries
-
----
-
-## AI Cost Optimization
-
-TaskPilot achieves **60-80% AI cost reduction** through:
-
-1. **Heuristic routing** — Skip AI for simple tasks (regex/DOM parsing handles 40%+ of requests)
-2. **Semantic caching** — Same page + same task = cached result (34%+ hit rate in practice)
-3. **Token optimization** — Strip boilerplate, compress whitespace, limit visible content
-4. **Model routing** — `gpt-4.1-mini` by default, `gpt-4.1` only for complex tasks
-5. **Context limits** — Per-task content limits (500 chars for smart paste, 4000 for export)
-
-Estimated cost at scale: ~$0.00015 per request (after optimizations)
-
----
-
-## Security
-
-- All AI requests routed through server-side proxy (no client-side API keys)
-- CSP hardened against XSS
-- Rate limiting: per-IP sliding windows (Redis)
-- Abuse detection: burst detection + IP blocklist
-- Extension uses Shadow DOM (no CSS conflicts)
-- Minimum permissions: only `activeTab` + `storage` required; `<all_urls>` is optional
-- RLS enabled on all Supabase tables
-
----
-
-## Development Notes
-
-### Monorepo Commands
-
-```bash
-npm run dev          # Start all packages in dev mode
-npm run build        # Build all packages
-npm run lint         # Lint all packages
-npm run type-check   # TypeScript check across all packages
-```
-
-### Extension Hot Reload
-
-Plasmo provides hot reload for the extension during development. Changes to content scripts require a page refresh; background worker changes require reloading the extension.
-
-### Supabase Local Development
-
-```bash
-supabase start       # Start local Postgres + Auth + Studio
-supabase studio      # Open Studio at http://localhost:54323
-supabase stop        # Stop all services
-```
-
----
-
-## Roadmap
-
-### v1.0 (MVP)
-- [x] Chrome extension (Manifest V3)
-- [x] Smart Paste with 3-layer parsing
-- [x] AI Sidebar (summarize, extract, translate, rewrite)
-- [x] Stripe integration (Free + Pro)
-- [x] Anonymous sessions (no forced signup)
-- [x] Semantic cache (60%+ cost reduction)
-- [x] Dashboard with analytics
-
-### v1.1
-- [ ] Firefox extension
-- [ ] HubSpot CRM integration
-- [ ] Workflow builder UI
-- [ ] Browser action recording
-- [ ] Team workspaces
-
-### v2.0
-- [ ] Salesforce + Notion integrations
-- [ ] AI workflow automation
-- [ ] Custom AI models (fine-tuned)
-- [ ] Enterprise SSO
+The LLM is never called in tests. A scripted provider makes planner and runtime
+behaviour deterministic, which is also what the app falls back to when no API
+key is configured.
 
 ---
 
 ## License
 
-Proprietary — TaskPilot © 2025. All rights reserved.
+Proprietary — TaskPilot © 2026. All rights reserved.
