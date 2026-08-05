@@ -1,607 +1,499 @@
 // ============================================================
 // TASKPILOT — CONTENT SCRIPT
 // apps/extension/src/content/index.ts
-// Injects sidebar, handles Smart Paste, DOM interaction
+//
+// Runs in the page. Owns the ActionExecutor (the only code that touches the
+// user's DOM), the command palette, and the injected sidebar.
+//
+// All UI is rendered inside a closed shadow root so the host page cannot
+// style it, read it, or trick the user with a lookalike overlay.
 // ============================================================
 
-import { detectFormFields } from "@taskpilot/browser-tools/smart-paste";
-import type { PageContext, FormField, TableData, PageType } from "@taskpilot/shared/types";
+import { ActionExecutor, buildPageContext, type HostBridge } from "@taskpilot/browser-tools";
+import type { ActionResult, PageContext } from "@taskpilot/shared";
+
+import { failure, reply, type ContentMessage, type Reply } from "../shared/messages";
+
+// Guard against double injection: the background worker injects on demand,
+// and the manifest also declares this script for normal page loads.
+declare global {
+  interface Window {
+    __taskpilotContentLoaded?: boolean;
+  }
+}
+
+if (window.__taskpilotContentLoaded) {
+  // Already attached — do nothing rather than register duplicate listeners.
+} else {
+  window.__taskpilotContentLoaded = true;
+  init();
+}
 
 // ─── STATE ───────────────────────────────────────────────────
 
-let sidebarInjected = false;
-let sidebarVisible = false;
-let sidebarFrame: HTMLIFrameElement | null = null;
+let executor: ActionExecutor | null = null;
+let overlayRoot: ShadowRoot | null = null;
+let paletteOpen = false;
+
+function getExecutor(): ActionExecutor {
+  if (!executor) {
+    const host: HostBridge = {
+      // Clipboard reads need a user gesture in some contexts; failing here is
+      // recoverable, so it returns empty rather than throwing.
+      readClipboard: async () => {
+        try {
+          return await navigator.clipboard.readText();
+        } catch {
+          return "";
+        }
+      },
+      notify: async (message, level) => {
+        showToast(message, level as ToastLevel);
+      },
+    };
+
+    executor = new ActionExecutor({ doc: document, host, defaultTimeoutMs: 8000 });
+  }
+  return executor;
+}
 
 // ─── INIT ────────────────────────────────────────────────────
 
-function init() {
-  // Listen for messages from background/popup
+function init(): void {
   chrome.runtime.onMessage.addListener(handleMessage);
-  
-  // Context menu support
-  document.addEventListener("mouseup", handleTextSelection);
-  
-  // Keyboard shortcuts
-  document.addEventListener("keydown", handleKeydown);
-  
-  // Auto-detect page type for proactive suggestions
-  requestIdleCallback(analyzePageContext);
+  document.addEventListener("keydown", handleKeydown, true);
 }
 
-// ─── MESSAGE HANDLER ─────────────────────────────────────────
-
 function handleMessage(
-  message: { type: string; payload?: unknown },
+  message: ContentMessage,
   _sender: chrome.runtime.MessageSender,
-  sendResponse: (response: unknown) => void
-) {
+  sendResponse: (response: Reply<unknown>) => void
+): boolean | void {
   switch (message.type) {
-    case "TOGGLE_SIDEBAR":
-      toggleSidebar(message.payload as SidebarInitialAction | undefined);
-      sendResponse({ success: true });
+    case "PING":
+      sendResponse(reply({ ready: true }));
       return;
 
-    case "SMART_PASTE":
-      handleSmartPaste(message.payload as string).then(sendResponse);
-      return true; // async response
-
-    case "GET_PAGE_CONTEXT":
-      sendResponse(buildPageContext());
-      return;
-
-    case "AUTOFILL_FIELDS":
-      autofillFields(message.payload as Array<{ selector: string; value: string }>);
-      sendResponse({ success: true });
-      return;
-
-    case "EXTRACT_CONTENT":
-      sendResponse({
-        text: getVisibleText(),
-        forms: detectFormFields(document),
-        tables: extractTables(),
-      });
+    case "READ_CONTEXT":
+      sendResponse(reply(readContext()));
       return;
 
     case "EXECUTE_ACTION":
-      executeAction(message.payload as { action: string; params: unknown })
-        .then(sendResponse);
+      // Async: keep the channel open by returning true.
+      getExecutor()
+        .execute(message.action)
+        .then((result: ActionResult) => sendResponse(reply(result)))
+        .catch((err) => sendResponse(failure(err)));
       return true;
 
-    case "SHOW_NOTIFICATION":
-      showTaskPilotNotification(message.payload as { message: string; type: string });
-      sendResponse({ success: true });
+    case "TOGGLE_SIDEBAR":
+      toggleSidebar(message.payload);
+      sendResponse(reply({ toggled: true }));
       return;
 
-    case "HIGHLIGHT_FIELDS":
-      highlightFormFields(message.payload as string[]);
-      sendResponse({ success: true });
+    case "OPEN_COMMAND_PALETTE":
+      togglePalette();
+      sendResponse(reply({ open: paletteOpen }));
       return;
+
+    case "HIGHLIGHT":
+      highlight(message.selectors);
+      sendResponse(reply({ highlighted: message.selectors.length }));
+      return;
+
+    case "SHOW_NOTIFICATION":
+      showToast(message.message, message.level);
+      sendResponse(reply({ shown: true }));
+      return;
+
+    case "READ_CLIPBOARD":
+      navigator.clipboard
+        .readText()
+        .then((text) => sendResponse(reply({ text })))
+        .catch((err) => sendResponse(failure(err)));
+      return true;
 
     default:
+      sendResponse(failure("Unknown message"));
       return;
+  }
+}
+
+function readContext(): PageContext {
+  return buildPageContext(document, 20_000);
+}
+
+// ─── KEYBOARD ────────────────────────────────────────────────
+
+function handleKeydown(event: KeyboardEvent): void {
+  // Alt+K opens the palette. Chrome commands cover this too, but a page that
+  // swallows the command still leaves this path working.
+  if (event.altKey && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    event.stopPropagation();
+    togglePalette();
+    return;
+  }
+
+  if (event.key === "Escape" && paletteOpen) {
+    closePalette();
+  }
+}
+
+// ─── OVERLAY HOST ────────────────────────────────────────────
+
+/**
+ * One closed shadow root hosts everything TaskPilot renders. Closed mode
+ * means the page cannot reach into it via `element.shadowRoot`.
+ */
+function getOverlayRoot(): ShadowRoot {
+  if (overlayRoot) return overlayRoot;
+
+  const host = document.createElement("div");
+  host.id = "taskpilot-overlay-host";
+  host.style.cssText = "all: initial; position: fixed; z-index: 2147483647;";
+
+  overlayRoot = host.attachShadow({ mode: "closed" });
+  overlayRoot.appendChild(buildStyles());
+  document.documentElement.appendChild(host);
+
+  return overlayRoot;
+}
+
+function buildStyles(): HTMLStyleElement {
+  const style = document.createElement("style");
+  style.textContent = `
+    :host { all: initial; }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+
+    .tp-backdrop {
+      position: fixed; inset: 0; background: rgba(8, 10, 20, 0.45);
+      backdrop-filter: blur(2px); display: flex; align-items: flex-start;
+      justify-content: center; padding-top: 14vh; z-index: 1;
+    }
+    .tp-palette {
+      width: min(620px, 92vw); background: #14161f; color: #f4f5f8;
+      border: 1px solid rgba(255,255,255,0.12); border-radius: 14px;
+      box-shadow: 0 24px 70px rgba(0,0,0,0.55); overflow: hidden;
+    }
+    .tp-palette-header { display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .tp-logo { width: 22px; height: 22px; border-radius: 6px; flex: none;
+      background: linear-gradient(135deg, #6366f1, #a855f7); display: flex;
+      align-items: center; justify-content: center; font-size: 12px; color: #fff; font-weight: 700; }
+    .tp-input { flex: 1; background: transparent; border: none; outline: none;
+      color: #f4f5f8; font-size: 15px; }
+    .tp-input::placeholder { color: rgba(244,245,248,0.4); }
+    .tp-hint { font-size: 11px; color: rgba(244,245,248,0.35); white-space: nowrap; }
+
+    .tp-suggestions { max-height: 320px; overflow-y: auto; padding: 6px; }
+    .tp-suggestion { display: flex; align-items: center; gap: 10px; padding: 9px 11px;
+      border-radius: 9px; cursor: pointer; font-size: 13.5px; color: rgba(244,245,248,0.85); }
+    .tp-suggestion:hover, .tp-suggestion[data-active="true"] { background: rgba(99,102,241,0.16); color: #fff; }
+    .tp-suggestion-icon { width: 20px; text-align: center; opacity: 0.75; }
+
+    .tp-status { padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.08);
+      font-size: 12.5px; color: rgba(244,245,248,0.65); display: flex; align-items: center; gap: 8px; }
+    .tp-spinner { width: 12px; height: 12px; border: 2px solid rgba(99,102,241,0.3);
+      border-top-color: #6366f1; border-radius: 50%; animation: tp-spin 0.7s linear infinite; }
+    @keyframes tp-spin { to { transform: rotate(360deg); } }
+
+    .tp-toast-stack { position: fixed; bottom: 22px; right: 22px; display: flex;
+      flex-direction: column; gap: 8px; z-index: 2; }
+    .tp-toast { padding: 11px 15px; border-radius: 10px; font-size: 13.5px; color: #fff;
+      background: #1c1f2b; border: 1px solid rgba(255,255,255,0.12);
+      box-shadow: 0 12px 34px rgba(0,0,0,0.4); max-width: 340px;
+      animation: tp-slide 180ms ease-out; }
+    .tp-toast[data-level="success"] { border-left: 3px solid #22c55e; }
+    .tp-toast[data-level="error"]   { border-left: 3px solid #ef4444; }
+    .tp-toast[data-level="warning"] { border-left: 3px solid #f59e0b; }
+    .tp-toast[data-level="info"]    { border-left: 3px solid #6366f1; }
+    @keyframes tp-slide { from { opacity: 0; transform: translateX(16px); } }
+
+    .tp-sidebar { position: fixed; top: 0; right: 0; width: 390px; height: 100vh;
+      border: none; border-left: 1px solid rgba(255,255,255,0.1);
+      box-shadow: -8px 0 40px rgba(0,0,0,0.3); transform: translateX(100%);
+      transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1); background: #14161f; }
+    .tp-sidebar[data-open="true"] { transform: translateX(0); }
+
+    .tp-highlight { outline: 2px solid #6366f1 !important;
+      outline-offset: 2px !important; transition: outline 120ms; }
+  `;
+  return style;
+}
+
+// ─── COMMAND PALETTE ─────────────────────────────────────────
+
+interface Suggestion {
+  icon: string;
+  label: string;
+  goal: string;
+}
+
+const SUGGESTIONS: Suggestion[] = [
+  { icon: "S", label: "Summarize this page", goal: "Summarize this page" },
+  { icon: "@", label: "Extract every email address", goal: "Extract all the email addresses on this page" },
+  { icon: "#", label: "Extract the table to CSV", goal: "Extract the table on this page and export it as CSV" },
+  { icon: "$", label: "Extract all prices", goal: "Extract all the prices on this page" },
+  { icon: "T", label: "Translate to English", goal: "Translate this page to English" },
+  { icon: "R", label: "Draft a reply", goal: "Write a professional reply to this message" },
+  { icon: "V", label: "Smart paste into this form", goal: "Smart paste the clipboard into this form" },
+  { icon: "C", label: "Extract contacts", goal: "Extract all the contacts on this page" },
+];
+
+let paletteElements: {
+  backdrop: HTMLElement;
+  input: HTMLInputElement;
+  list: HTMLElement;
+  status: HTMLElement;
+} | null = null;
+
+function togglePalette(): void {
+  if (paletteOpen) closePalette();
+  else openPalette();
+}
+
+function openPalette(): void {
+  const root = getOverlayRoot();
+
+  if (!paletteElements) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "tp-backdrop";
+
+    const palette = document.createElement("div");
+    palette.className = "tp-palette";
+
+    const header = document.createElement("div");
+    header.className = "tp-palette-header";
+    header.innerHTML = `<div class="tp-logo">T</div>`;
+
+    const input = document.createElement("input");
+    input.className = "tp-input";
+    input.placeholder = "Tell TaskPilot what to do on this page...";
+    input.autocomplete = "off";
+    input.spellcheck = false;
+
+    const hint = document.createElement("div");
+    hint.className = "tp-hint";
+    hint.textContent = "Enter to run - Esc to close";
+
+    header.append(input, hint);
+
+    const list = document.createElement("div");
+    list.className = "tp-suggestions";
+
+    const status = document.createElement("div");
+    status.className = "tp-status";
+    status.style.display = "none";
+
+    palette.append(header, list, status);
+    backdrop.appendChild(palette);
+    root.appendChild(backdrop);
+
+    // Clicking the backdrop closes; clicking the panel must not.
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) closePalette();
+    });
+    palette.addEventListener("click", (event) => event.stopPropagation());
+
+    input.addEventListener("input", () => renderSuggestions(input.value));
+    input.addEventListener("keydown", handlePaletteKeys);
+
+    paletteElements = { backdrop, input, list, status };
+  }
+
+  paletteElements.backdrop.style.display = "flex";
+  paletteElements.input.value = "";
+  paletteElements.status.style.display = "none";
+  renderSuggestions("");
+  paletteOpen = true;
+
+  // Focus after the element is laid out, or the caret lands nowhere.
+  requestAnimationFrame(() => paletteElements?.input.focus());
+}
+
+function closePalette(): void {
+  if (paletteElements) paletteElements.backdrop.style.display = "none";
+  paletteOpen = false;
+}
+
+function renderSuggestions(query: string): void {
+  if (!paletteElements) return;
+
+  const needle = query.trim().toLowerCase();
+  const matches = needle
+    ? SUGGESTIONS.filter((s) => s.label.toLowerCase().includes(needle) || s.goal.toLowerCase().includes(needle))
+    : SUGGESTIONS;
+
+  paletteElements.list.replaceChildren();
+
+  // Whatever the user typed is always the first, highlighted option — the
+  // palette is a command line, not a menu.
+  if (needle) {
+    paletteElements.list.appendChild(
+      buildSuggestionRow({ icon: ">", label: `Run: "${query.trim()}"`, goal: query.trim() }, true)
+    );
+  }
+
+  matches.slice(0, needle ? 4 : 8).forEach((suggestion, index) => {
+    paletteElements!.list.appendChild(buildSuggestionRow(suggestion, !needle && index === 0));
+  });
+}
+
+function buildSuggestionRow(suggestion: Suggestion, active: boolean): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "tp-suggestion";
+  row.dataset.active = String(active);
+  row.dataset.goal = suggestion.goal;
+
+  const icon = document.createElement("span");
+  icon.className = "tp-suggestion-icon";
+  icon.textContent = suggestion.icon;
+
+  const label = document.createElement("span");
+  // textContent, never innerHTML: `label` can contain the user's own typing.
+  label.textContent = suggestion.label;
+
+  row.append(icon, label);
+  row.addEventListener("click", () => void runGoal(suggestion.goal));
+  row.addEventListener("mouseenter", () => setActiveRow(row));
+
+  return row;
+}
+
+function setActiveRow(target: HTMLElement): void {
+  paletteElements?.list.querySelectorAll<HTMLElement>(".tp-suggestion").forEach((row) => {
+    row.dataset.active = String(row === target);
+  });
+}
+
+function handlePaletteKeys(event: KeyboardEvent): void {
+  if (!paletteElements) return;
+
+  const rows = [...paletteElements.list.querySelectorAll<HTMLElement>(".tp-suggestion")];
+  const activeIndex = rows.findIndex((row) => row.dataset.active === "true");
+
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    if (!rows.length) return;
+    const delta = event.key === "ArrowDown" ? 1 : -1;
+    const next = (activeIndex + delta + rows.length) % rows.length;
+    setActiveRow(rows[next]);
+    return;
+  }
+
+  if (event.key === "Enter") {
+    event.preventDefault();
+    const goal = rows[activeIndex]?.dataset.goal ?? paletteElements.input.value.trim();
+    if (goal) void runGoal(goal);
+  }
+}
+
+async function runGoal(goal: string): Promise<void> {
+  if (!paletteElements) return;
+
+  paletteElements.status.style.display = "flex";
+  paletteElements.status.replaceChildren();
+
+  const spinner = document.createElement("div");
+  spinner.className = "tp-spinner";
+  const label = document.createElement("span");
+  label.textContent = `Planning: ${goal}`;
+  paletteElements.status.append(spinner, label);
+
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "RUN_GOAL", goal });
+
+    if (!response?.ok) {
+      label.textContent = response?.error ?? "TaskPilot could not start that task";
+      spinner.remove();
+      showToast(response?.error ?? "Could not start the task", "error");
+      return;
+    }
+
+    closePalette();
+    showToast(`Running: ${goal}`, "info");
+  } catch (err) {
+    spinner.remove();
+    label.textContent = err instanceof Error ? err.message : "Something went wrong";
   }
 }
 
 // ─── SIDEBAR ─────────────────────────────────────────────────
 
-interface SidebarInitialAction {
-  initial_action?: string;
-  selected_text?: string;
-  user_input?: string;
-}
+let sidebarFrame: HTMLIFrameElement | null = null;
 
-function toggleSidebar(initialAction?: SidebarInitialAction) {
-  if (!sidebarInjected) {
-    injectSidebar(initialAction);
+function toggleSidebar(payload?: { initial_action?: string; selected_text?: string }): void {
+  const root = getOverlayRoot();
+
+  if (!sidebarFrame) {
+    sidebarFrame = document.createElement("iframe");
+    sidebarFrame.className = "tp-sidebar";
+    sidebarFrame.src = chrome.runtime.getURL("sidebar.html");
+    root.appendChild(sidebarFrame);
+
+    // Reveal on the next frame so the CSS transition has a start state.
+    requestAnimationFrame(() => {
+      sidebarFrame!.dataset.open = "true";
+    });
   } else {
-    sidebarVisible = !sidebarVisible;
-    if (sidebarFrame) {
-      sidebarFrame.style.transform = sidebarVisible
-        ? "translateX(0)"
-        : "translateX(100%)";
-    }
-    if (initialAction) {
-      sidebarFrame?.contentWindow?.postMessage(
-        { type: "INITIAL_ACTION", payload: initialAction },
-        chrome.runtime.getURL("sidebar.html")
-      );
-    }
+    sidebarFrame.dataset.open = sidebarFrame.dataset.open === "true" ? "false" : "true";
   }
-}
 
-function injectSidebar(initialAction?: SidebarInitialAction) {
-  // Create container
-  const container = document.createElement("div");
-  container.id = "taskpilot-sidebar-container";
-  container.style.cssText = `
-    position: fixed;
-    top: 0;
-    right: 0;
-    width: 380px;
-    height: 100vh;
-    z-index: 2147483647;
-    pointer-events: none;
-    font-family: inherit;
-  `;
-
-  // Create shadow root for style isolation
-  const shadow = container.attachShadow({ mode: "closed" });
-
-  // Inject sidebar iframe
-  sidebarFrame = document.createElement("iframe");
-  sidebarFrame.src = chrome.runtime.getURL("sidebar.html");
-  sidebarFrame.style.cssText = `
-    width: 380px;
-    height: 100vh;
-    border: none;
-    border-left: 1px solid rgba(255,255,255,0.1);
-    box-shadow: -8px 0 40px rgba(0,0,0,0.3);
-    transform: translateX(100%);
-    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    pointer-events: all;
-    background: transparent;
-    border-radius: 12px 0 0 12px;
-  `;
-
-  shadow.appendChild(sidebarFrame);
-  document.body.appendChild(container);
-  
-  sidebarInjected = true;
-
-  // Show after mount
-  setTimeout(() => {
-    if (sidebarFrame) {
-      sidebarFrame.style.transform = "translateX(0)";
-      sidebarVisible = true;
-    }
-  }, 50);
-
-  // Pass page context (and optionally an initial action) to the sidebar
-  sidebarFrame.addEventListener("load", () => {
-    sidebarFrame?.contentWindow?.postMessage(
-      { type: "PAGE_CONTEXT", payload: buildPageContext() },
-      chrome.runtime.getURL("sidebar.html")
-    );
-    if (initialAction) {
-      sidebarFrame?.contentWindow?.postMessage(
-        { type: "INITIAL_ACTION", payload: initialAction },
-        chrome.runtime.getURL("sidebar.html")
-      );
-    }
-  });
-}
-
-// ─── SMART PASTE ─────────────────────────────────────────────
-
-async function handleSmartPaste(clipboardText?: string): Promise<{
-  success: boolean;
-  mappings_count: number;
-  confidence: number;
-}> {
-  try {
-    // Read clipboard if not provided
-    const text = clipboardText || (await navigator.clipboard.readText());
-    if (!text.trim()) {
-      showTaskPilotNotification({
-        message: "Clipboard is empty",
-        type: "warning",
-      });
-      return { success: false, mappings_count: 0, confidence: 0 };
-    }
-
-    // Show loading state on fields
-    const fields = detectFormFields(document);
-    if (fields.length === 0) {
-      showTaskPilotNotification({
-        message: "No form fields detected on this page",
-        type: "info",
-      });
-      return { success: false, mappings_count: 0, confidence: 0 };
-    }
-
-    // Call background for AI processing
-    const result = await chrome.runtime.sendMessage({
-      type: "PROCESS_SMART_PASTE",
-      payload: {
-        clipboard_text: text,
-        page_context: buildPageContext(),
+  if (payload && sidebarFrame.dataset.open === "true") {
+    // Target the extension origin explicitly rather than "*", so the message
+    // cannot be read by a frame from the host page.
+    sidebarFrame.addEventListener(
+      "load",
+      () => {
+        sidebarFrame?.contentWindow?.postMessage(
+          { type: "INITIAL_ACTION", payload },
+          new URL(chrome.runtime.getURL("sidebar.html")).origin
+        );
       },
-    });
-
-    if (result.mappings && result.mappings.length > 0) {
-      // Animate fill
-      await animatedAutofill(result.mappings);
-      
-      showTaskPilotNotification({
-        message: `✓ Filled ${result.mappings.length} fields (${Math.round(result.confidence * 100)}% confidence)`,
-        type: "success",
-      });
-
-      return {
-        success: true,
-        mappings_count: result.mappings.length,
-        confidence: result.confidence,
-      };
-    }
-
-    showTaskPilotNotification({
-      message: "Couldn't map clipboard data to form fields",
-      type: "warning",
-    });
-    return { success: false, mappings_count: 0, confidence: 0 };
-  } catch (err) {
-    console.error("[TaskPilot] Smart Paste error:", err);
-    return { success: false, mappings_count: 0, confidence: 0 };
-  }
-}
-
-// ─── ANIMATED AUTOFILL ───────────────────────────────────────
-
-async function animatedAutofill(
-  mappings: Array<{ field: { element_selector: string }; value: string; confidence: number }>
-) {
-  for (const mapping of mappings) {
-    const el = document.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
-      mapping.field.element_selector
+      { once: true }
     );
-    if (!el) continue;
-
-    // Highlight field
-    const originalOutline = el.style.outline;
-    const originalTransition = el.style.transition;
-    el.style.transition = "all 0.2s ease";
-    el.style.outline = "2px solid rgba(99, 102, 241, 0.8)";
-    el.style.boxShadow = "0 0 0 4px rgba(99, 102, 241, 0.15)";
-
-    // Simulate typing effect
-    await typeValue(el, mapping.value);
-
-    // Flash success
-    el.style.outline = "2px solid rgba(16, 185, 129, 0.8)";
-    el.style.boxShadow = "0 0 0 4px rgba(16, 185, 129, 0.15)";
-
-    await sleep(300);
-
-    // Restore
-    el.style.outline = originalOutline;
-    el.style.boxShadow = "";
-    el.style.transition = originalTransition;
   }
 }
 
-async function typeValue(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
-  if (el.tagName === "SELECT") {
-    (el as HTMLSelectElement).value = value;
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-    return;
+// ─── TOASTS + HIGHLIGHTS ─────────────────────────────────────
+
+type ToastLevel = "info" | "success" | "warning" | "error";
+
+let toastStack: HTMLElement | null = null;
+
+function showToast(message: string, level: ToastLevel = "info"): void {
+  const root = getOverlayRoot();
+
+  if (!toastStack) {
+    toastStack = document.createElement("div");
+    toastStack.className = "tp-toast-stack";
+    root.appendChild(toastStack);
   }
 
-  // Use React/Vue compatible value setter
-  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
-    "value"
-  )?.set;
+  const toast = document.createElement("div");
+  toast.className = "tp-toast";
+  toast.dataset.level = level;
+  toast.textContent = message;
 
-  if (nativeInputValueSetter) {
-    nativeInputValueSetter.call(el, value);
-  } else {
-    (el as HTMLInputElement).value = value;
-  }
-
-  // Dispatch events for React/Vue/Angular compatibility
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-  el.dispatchEvent(new Event("change", { bubbles: true }));
-  el.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }));
+  toastStack.appendChild(toast);
+  setTimeout(() => toast.remove(), level === "error" ? 6000 : 3500);
 }
 
-// ─── AUTOFILL FIELDS ─────────────────────────────────────────
+function highlight(selectors: string[]): void {
+  document
+    .querySelectorAll(".tp-highlight")
+    .forEach((el) => el.classList.remove("tp-highlight"));
 
-function autofillFields(
-  mappings: Array<{ selector: string; value: string }>
-) {
-  mappings.forEach(({ selector, value }) => {
-    const el = document.querySelector<HTMLInputElement>(selector);
-    if (el) typeValue(el, value);
-  });
-}
-
-// ─── PAGE CONTEXT BUILDER ────────────────────────────────────
-
-function buildPageContext(): PageContext {
-  return {
-    url: window.location.href,
-    title: document.title,
-    visible_text: getVisibleText(),
-    meta_description: getMetaDescription(),
-    selected_text: window.getSelection()?.toString() || undefined,
-    detected_forms: detectFormFields(document),
-    detected_tables: extractTables(),
-    page_type: detectPageType(),
-    domain: window.location.hostname,
-  };
-}
-
-function getVisibleText(): string {
-  const clone = document.body.cloneNode(true) as HTMLElement;
-  
-  // Remove script, style, hidden elements
-  const toRemove = clone.querySelectorAll(
-    "script, style, noscript, [hidden], [aria-hidden='true'], .sr-only"
-  );
-  toRemove.forEach((el) => el.remove());
-  
-  return (clone.textContent || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 10000);
-}
-
-function getMetaDescription(): string | undefined {
-  return (
-    document.querySelector<HTMLMetaElement>('meta[name="description"]')?.content ||
-    document.querySelector<HTMLMetaElement>('meta[property="og:description"]')?.content
-  );
-}
-
-function extractTables(): TableData[] {
-  const tables: TableData[] = [];
-  
-  document.querySelectorAll("table").forEach((table, index) => {
-    const headerRow = table.querySelector("thead tr");
-    const headers = headerRow
-      ? Array.from(headerRow.querySelectorAll("th, td")).map(
-          (th) => th.textContent?.trim() || ""
-        )
-      : [];
-    
-    const rows: string[][] = [];
-    table.querySelectorAll("tbody tr").forEach((row) => {
-      const cells = Array.from(row.querySelectorAll("td, th")).map(
-        (td) => td.textContent?.trim() || ""
-      );
-      if (cells.some((c) => c)) rows.push(cells);
-    });
-
-    if (rows.length > 0) {
-      tables.push({
-        headers,
-        rows: rows.slice(0, 100), // max 100 rows
-        row_count: rows.length,
-        element_selector: `table:nth-of-type(${index + 1})`,
-      });
+  for (const selector of selectors.slice(0, 50)) {
+    try {
+      document.querySelectorAll(selector).forEach((el) => el.classList.add("tp-highlight"));
+    } catch {
+      // An invalid selector is a miss, not a crash.
     }
-  });
-
-  return tables.slice(0, 5); // max 5 tables
-}
-
-function detectPageType(): PageType {
-  const url = window.location.href.toLowerCase();
-  const title = document.title.toLowerCase();
-
-  if (url.includes("hubspot") || url.includes("salesforce") || url.includes("crm")) return "crm";
-  if (url.includes("gmail") || url.includes("outlook") || url.includes("mail")) return "email";
-  if (url.includes("linkedin") || url.includes("twitter") || url.includes("x.com")) return "social";
-  if (url.includes("shopify") || url.includes("amazon") || url.includes("shop")) return "ecommerce";
-  if (document.querySelectorAll("form input").length > 3) return "form";
-  if (document.querySelectorAll("article, .article, .post").length > 0) return "article";
-  if (url.includes("docs") || url.includes("wiki")) return "documentation";
-  return "generic";
-}
-
-// ─── KEYBOARD SHORTCUTS ──────────────────────────────────────
-
-function handleKeydown(e: KeyboardEvent) {
-  // Alt+V = Smart Paste
-  if (e.altKey && e.key === "v") {
-    e.preventDefault();
-    handleSmartPaste();
   }
-  // Alt+S = Toggle Sidebar
-  if (e.altKey && e.key === "s") {
-    e.preventDefault();
-    toggleSidebar();
-  }
-  // Escape = Close Sidebar
-  if (e.key === "Escape" && sidebarVisible) {
-    toggleSidebar();
-  }
-}
-
-// ─── TEXT SELECTION (context menu trigger) ───────────────────
-
-function handleTextSelection() {
-  const selection = window.getSelection()?.toString().trim();
-  if (selection && selection.length > 20) {
-    chrome.runtime.sendMessage({
-      type: "TEXT_SELECTED",
-      payload: { text: selection, url: window.location.href },
-    });
-  }
-}
-
-// ─── FIELD HIGHLIGHTS ────────────────────────────────────────
-
-function highlightFormFields(selectors: string[]) {
-  selectors.forEach((selector) => {
-    const el = document.querySelector<HTMLElement>(selector);
-    if (el) {
-      el.style.outline = "2px solid rgba(99, 102, 241, 0.6)";
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  });
-}
-
-// ─── PAGE ANALYSIS ───────────────────────────────────────────
-
-function analyzePageContext() {
-  const forms = detectFormFields(document);
-  const tables = extractTables();
-  const pageType = detectPageType();
-
-  chrome.runtime.sendMessage({
-    type: "PAGE_ANALYZED",
-    payload: {
-      url: window.location.href,
-      page_type: pageType,
-      has_forms: forms.length > 0,
-      form_count: forms.length,
-      has_tables: tables.length > 0,
-      table_count: tables.length,
-    },
-  }).catch(() => {
-    // Background may not be ready yet, ignore
-  });
-}
-
-// ─── NOTIFICATION SYSTEM ─────────────────────────────────────
-
-function showTaskPilotNotification(opts: { message: string; type: string }) {
-  // Remove existing
-  document.querySelector("#taskpilot-notification")?.remove();
-
-  const colors = {
-    success: { bg: "#10b981", icon: "✓" },
-    warning: { bg: "#f59e0b", icon: "⚠" },
-    error: { bg: "#ef4444", icon: "✕" },
-    info: { bg: "#6366f1", icon: "ℹ" },
-  };
-
-  const config = colors[opts.type as keyof typeof colors] || colors.info;
-
-  const notification = document.createElement("div");
-  notification.id = "taskpilot-notification";
-  notification.style.cssText = `
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    z-index: 2147483647;
-    background: #1a1a2e;
-    border: 1px solid rgba(255,255,255,0.1);
-    border-left: 3px solid ${config.bg};
-    color: #fff;
-    padding: 12px 16px;
-    border-radius: 8px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 13px;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    animation: taskpilot-slide-in 0.2s ease;
-    max-width: 320px;
-  `;
-
-  const style = document.createElement("style");
-  style.textContent = `
-    @keyframes taskpilot-slide-in {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-  `;
-  notification.appendChild(style);
-
-  const icon = document.createElement("span");
-  icon.style.cssText = `background: ${config.bg}; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0;`;
-  icon.textContent = config.icon;
-
-  const text = document.createElement("span");
-  text.textContent = opts.message;
-
-  notification.appendChild(icon);
-  notification.appendChild(text);
-  document.body.appendChild(notification);
 
   setTimeout(() => {
-    notification.style.opacity = "0";
-    notification.style.transform = "translateX(100%)";
-    notification.style.transition = "all 0.2s ease";
-    setTimeout(() => notification.remove(), 200);
-  }, 3000);
+    document.querySelectorAll(".tp-highlight").forEach((el) => el.classList.remove("tp-highlight"));
+  }, 2600);
 }
-
-// ─── BROWSER ACTIONS ─────────────────────────────────────────
-
-async function executeAction(payload: {
-  action: string;
-  params: unknown;
-}): Promise<{ success: boolean; result?: unknown }> {
-  const params = payload.params as Record<string, unknown>;
-  
-  switch (payload.action) {
-    case "click": {
-      const el = document.querySelector<HTMLElement>(params.selector as string);
-      if (el) { el.click(); return { success: true }; }
-      return { success: false };
-    }
-
-    case "type": {
-      const el = document.querySelector<HTMLInputElement>(params.selector as string);
-      if (el) {
-        await typeValue(el, params.text as string);
-        return { success: true };
-      }
-      return { success: false };
-    }
-
-    case "scroll": {
-      window.scrollBy({
-        top: (params.y as number) || 300,
-        behavior: "smooth",
-      });
-      return { success: true };
-    }
-
-    case "extract_text": {
-      return { success: true, result: getVisibleText() };
-    }
-
-    case "extract_emails": {
-      const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
-      const emails = [...new Set(document.body.innerText.match(emailRegex) || [])];
-      return { success: true, result: emails };
-    }
-
-    case "extract_prices": {
-      const priceRegex = /[$€£¥]\s*[\d,]+(?:\.\d{2})?|[\d,]+(?:\.\d{2})?\s*[$€£¥]/g;
-      const prices = [...new Set(document.body.innerText.match(priceRegex) || [])];
-      return { success: true, result: prices };
-    }
-
-    case "wait_for_element": {
-      const found = await waitForElement(params.selector as string, params.timeout as number);
-      return { success: found };
-    }
-
-    default:
-      return { success: false, result: "Unknown action" };
-  }
-}
-
-function waitForElement(selector: string, timeout = 5000): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (document.querySelector(selector)) return resolve(true);
-
-    const observer = new MutationObserver(() => {
-      if (document.querySelector(selector)) {
-        observer.disconnect();
-        resolve(true);
-      }
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-    setTimeout(() => { observer.disconnect(); resolve(false); }, timeout);
-  });
-}
-
-// ─── UTILITIES ───────────────────────────────────────────────
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-// ─── BOOTSTRAP ───────────────────────────────────────────────
-
-init();
