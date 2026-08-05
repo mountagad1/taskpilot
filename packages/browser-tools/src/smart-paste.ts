@@ -13,6 +13,8 @@ import type {
   ParsingLayer,
 } from "@taskpilot/shared/types";
 
+import { cssEscape, isVisible } from "./dom/resolver";
+
 // ─── LAYER 1: REGEX PATTERNS ──────────────────────────────────
 
 const REGEX_PATTERNS: Record<SemanticFieldType, RegExp | null> = {
@@ -302,10 +304,11 @@ function buildFormField(
   index: number,
   document: Document
 ): FormField | null {
-  // Skip invisible fields
-  const style = window.getComputedStyle(el);
-  if (style.display === "none" || style.visibility === "hidden") return null;
-  if ((el as HTMLInputElement).offsetWidth === 0) return null;
+  // Share one visibility definition with the resolver. Note this no longer
+  // consults offsetWidth: that is 0 for any element inside a collapsed
+  // container (accordions, tab panels) whose fields are still real, and it
+  // is 0 for everything in a headless DOM.
+  if (!isVisible(el)) return null;
 
   // Find associated label
   let label = "";
@@ -353,7 +356,7 @@ function buildFormField(
 }
 
 function buildSelector(el: Element, index: number): string {
-  if (el.id) return `#${CSS.escape(el.id)}`;
+  if (el.id) return `#${cssEscape(el.id)}`;
   if (el.getAttribute("name")) {
     return `[name="${el.getAttribute("name")}"]`;
   }

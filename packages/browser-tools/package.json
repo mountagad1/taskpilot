@@ -5,12 +5,22 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./smart-paste": "./src/smart-paste.ts"
+    "./smart-paste": "./src/smart-paste.ts",
+    "./executor": "./src/actions/executor.ts",
+    "./extract": "./src/extract/index.ts",
+    "./export": "./src/export/index.ts",
+    "./dom": "./src/dom/resolver.ts"
   },
   "dependencies": {
     "@taskpilot/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.3.3"
-  }
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "type": "module"
 }

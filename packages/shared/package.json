@@ -9,5 +9,11 @@
   },
   "devDependencies": {
     "typescript": "^5.3.3"
-  }
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "type": "module"
 }
