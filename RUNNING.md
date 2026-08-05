@@ -245,9 +245,12 @@ expected answer, not a failure.
 Scheduled workflows, usage rollups and file sweeps run through a Postgres job
 queue.
 
+`WORKER_SECRET` is not obtained from any service — you invent it. Generate it
+with a CSPRNG (`Get-Random` is a plain PRNG and not suitable for a secret):
+
 ```powershell
-# PowerShell
-$env:WORKER_SECRET = -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Max 256) })
+# PowerShell — node ships a CSPRNG, so no openssl needed
+$env:WORKER_SECRET = node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 pnpm worker
 
 # Or drive it from any scheduler
