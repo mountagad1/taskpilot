@@ -246,9 +246,11 @@ CREATE TABLE referrals (
 
 -- ─── SAVED PROMPTS ────────────────────────────────────────────
 
+-- user_id NULL = a built-in template shipped with the product and readable
+-- by everyone. Anything owned by a user is private to that user.
 CREATE TABLE saved_prompts (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id     UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  user_id     UUID REFERENCES profiles(id) ON DELETE CASCADE,
   title       TEXT NOT NULL,
   prompt      TEXT NOT NULL,
   category    TEXT,
@@ -256,6 +258,8 @@ CREATE TABLE saved_prompts (
   use_count   INT DEFAULT 0,
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX idx_saved_prompts_user ON saved_prompts(user_id);
 
 -- ─── AI RESPONSE CACHE (semantic) ────────────────────────────
 
@@ -337,9 +341,12 @@ CREATE POLICY "Users own integrations" ON integrations
 CREATE POLICY "Users own metrics" ON productivity_metrics
   FOR ALL USING (auth.uid() = user_id);
 
--- Saved Prompts
+-- Saved Prompts — own prompts are read/write; built-in templates (user_id
+-- NULL) are readable by everyone but writable by no one through the API.
 CREATE POLICY "Users own prompts" ON saved_prompts
-  FOR ALL USING (auth.uid() = user_id);
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Built-in prompts are readable" ON saved_prompts
+  FOR SELECT USING (user_id IS NULL);
 
 -- ─── PROFILE AUTO-CREATE ──────────────────────────────────────
 
@@ -405,10 +412,11 @@ GROUP BY p.id, p.email, p.plan, p.created_at;
 
 -- ─── SEED DATA ────────────────────────────────────────────────
 
--- Default saved prompts (available to all users)
+-- Built-in prompt templates. user_id stays NULL: there is no system row in
+-- `profiles` to point at, and inventing one would fail the foreign key.
 INSERT INTO saved_prompts (user_id, title, prompt, category, icon)
-SELECT 
-  '00000000-0000-0000-0000-000000000000'::UUID, -- system user
+SELECT
+  NULL::UUID,
   title, prompt, category, icon
 FROM (VALUES
   ('Summarize page', 'Summarize this webpage in 3 bullet points', 'productivity', '📝'),
