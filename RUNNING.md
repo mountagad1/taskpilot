@@ -59,7 +59,14 @@ dashboard all render. Anything that needs the database says so plainly.
 To exercise sign-up, agents, runs and the marketplace for real you need a
 Supabase project.
 
+```powershell
+# PowerShell
+Copy-Item services/api/.env.example services/api/.env
+Copy-Item apps/web/.env.example apps/web/.env.local
+```
+
 ```bash
+# bash / zsh
 cp services/api/.env.example services/api/.env
 cp apps/web/.env.example apps/web/.env.local
 ```
@@ -97,15 +104,32 @@ filename order.
 ## 3. Build and load the extension
 
 ```bash
+# Local build — points at http://localhost:4000 / :3000
+pnpm --filter @taskpilot/extension build:dev
+
 # Production build — points at https://api.taskpilot.cc
 pnpm --filter @taskpilot/extension build
 
-# Local build — points at your dev servers
-cd apps/extension
-TASKPILOT_API_ORIGIN=http://localhost:4000 \
-TASKPILOT_WEB_ORIGIN=http://localhost:3000 \
-node scripts/build.mjs --dev
+# Rebuild on every change
+pnpm --filter @taskpilot/extension watch
 ```
+
+`build:dev` already defaults to the local origins, so there is nothing to
+configure. Override them only if your services run somewhere else — and note
+that the syntax differs by shell:
+
+```powershell
+# PowerShell (Windows default)
+$env:TASKPILOT_API_ORIGIN="http://192.168.1.20:4000"; node scripts/build.mjs --dev
+```
+
+```bash
+# bash / zsh
+TASKPILOT_API_ORIGIN=http://192.168.1.20:4000 node scripts/build.mjs --dev
+```
+
+Whichever you use, the build prints the origins it compiled in — check that
+line rather than trusting the command succeeded.
 
 Then:
 
@@ -176,23 +200,43 @@ back to when no API key is configured.
 
 ### Checking it by hand
 
-```bash
-# Public — no credentials needed
-curl http://localhost:4000/health
-curl http://localhost:4000/v1                    # discovery document
-curl http://localhost:4000/v1/marketplace/agents
+In PowerShell, `curl` is an **alias for `Invoke-WebRequest`**, which does not
+accept `-H` or `-d`. Use the native cmdlets, or call `curl.exe` by its full
+name to get the real binary.
 
-# Authenticated — returns 401 without a token
-curl http://localhost:4000/v1/me
+```powershell
+# PowerShell — public, no credentials needed
+Invoke-RestMethod http://localhost:4000/health
+Invoke-RestMethod http://localhost:4000/v1                    # discovery document
+Invoke-RestMethod http://localhost:4000/v1/marketplace/agents
 
 # Sign in, then use the token
+$login = Invoke-RestMethod -Method Post http://localhost:4000/v1/auth/login `
+  -ContentType 'application/json' `
+  -Body '{"email":"you@example.com","password":"..."}'
+$headers = @{ Authorization = "Bearer $($login.data.access_token)" }
+
+Invoke-RestMethod http://localhost:4000/v1/me     -Headers $headers
+Invoke-RestMethod http://localhost:4000/v1/agents -Headers $headers
+```
+
+```bash
+# bash / zsh
+curl http://localhost:4000/health
+curl http://localhost:4000/v1
+curl http://localhost:4000/v1/marketplace/agents
+
+curl http://localhost:4000/v1/me                 # 401 without a token
+
 TOKEN=$(curl -s -X POST http://localhost:4000/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"..."}' | jq -r .data.access_token)
 
 curl http://localhost:4000/v1/me -H "Authorization: Bearer $TOKEN"
-curl http://localhost:4000/v1/agents -H "Authorization: Bearer $TOKEN"
 ```
+
+An endpoint that needs credentials returns `401` without a token — that is the
+expected answer, not a failure.
 
 ---
 
@@ -201,11 +245,21 @@ curl http://localhost:4000/v1/agents -H "Authorization: Bearer $TOKEN"
 Scheduled workflows, usage rollups and file sweeps run through a Postgres job
 queue.
 
-```bash
-# Poll locally
-WORKER_SECRET=$(openssl rand -hex 32) pnpm worker
+```powershell
+# PowerShell
+$env:WORKER_SECRET = -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Max 256) })
+pnpm worker
 
 # Or drive it from any scheduler
+Invoke-RestMethod -Method Post http://localhost:4000/v1/jobs/worker `
+  -Headers @{ 'X-Worker-Secret' = $env:WORKER_SECRET }
+```
+
+```bash
+# bash / zsh
+export WORKER_SECRET=$(openssl rand -hex 32)
+pnpm worker
+
 curl -X POST http://localhost:4000/v1/jobs/worker -H "X-Worker-Secret: $WORKER_SECRET"
 ```
 
@@ -297,9 +351,16 @@ Expected without credentials. The message names the exact variable that is
 missing and which file to set it in.
 
 **Extension can't reach the API**
-It was built for a different origin. Rebuild with `TASKPILOT_API_ORIGIN` set
-and reload it at `chrome://extensions` — the origin is compiled in, not
-configurable at runtime.
+It was built for a different origin. Rebuild with
+`pnpm --filter @taskpilot/extension build:dev` and reload it at
+`chrome://extensions` — the origin is compiled in, not configurable at
+runtime, so a rebuild is the only way to change it. The build prints the
+origins it used; confirm that line says `localhost:4000`.
+
+**A `VAR=value command` line errors in PowerShell**
+That is bash syntax. PowerShell reads it as a command name and reports
+`CommandNotFoundException`. Use `$env:VAR="value"; command` instead — or the
+npm scripts above, which need no environment variables at all.
 
 **Extension isn't signed in after signing in on the web**
 Set `NEXT_PUBLIC_EXTENSION_ID` in `apps/web/.env.local` to the ID from

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TaskPilot Extension Test Page</title>
+<meta name="description" content="A fixture page exercising every browser action the TaskPilot extension can perform." />
+<style>
+  :root { --line:#e3e6ee; --muted:#6b7280; --ink:#111827; --accent:#6366f1; }
+  * { box-sizing: border-box; }
+  body { font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         color: var(--ink); max-width: 900px; margin: 0 auto; padding: 32px 24px 120px; }
+  h1 { font-size: 26px; letter-spacing: -0.02em; margin-bottom: 4px; }
+  h2 { font-size: 17px; margin: 34px 0 6px; padding-top: 20px; border-top: 1px solid var(--line); }
+  .hint { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+  .hint code { background:#f3f4f6; padding:1px 5px; border-radius:4px; font-size:12px; }
+  section { margin-bottom: 8px; }
+  label { display:block; font-size:13px; font-weight:600; margin:10px 0 4px; }
+  input, select, textarea { width:100%; max-width:380px; padding:8px 10px;
+    border:1px solid var(--line); border-radius:7px; font:inherit; }
+  button { padding:8px 15px; border:1px solid var(--line); border-radius:7px;
+    background:#fff; font:inherit; cursor:pointer; }
+  button.primary { background: var(--accent); color:#fff; border-color: var(--accent); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  table { border-collapse: collapse; width:100%; margin-top:8px; font-size:14px; }
+  th, td { border:1px solid var(--line); padding:7px 10px; text-align:left; }
+  th { background:#f9fafb; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+  .log { margin-top:12px; padding:10px 12px; background:#f9fafb; border:1px solid var(--line);
+         border-radius:7px; font-family: ui-monospace, monospace; font-size:12.5px;
+         min-height:38px; white-space:pre-wrap; }
+  .editable { border:1px dashed var(--line); border-radius:7px; padding:10px; min-height:44px; }
+  article { color:#374151; }
+</style>
+</head>
+<body>
+
+<h1>TaskPilot extension test page</h1>
+<p class="hint">
+  Every section maps to browser actions the extension can perform. Open it with
+  <code>file://</code> or any local server, then drive it from the popup
+  (<code>Alt+T</code>) or the command palette (<code>Alt+K</code>).
+</p>
+
+<!-- ─────────── FORMS: detect_forms · fill_form · smart_paste ─────────── -->
+<h2>1. Forms</h2>
+<p class="hint">
+  Tests <code>detect_forms</code>, <code>fill_form</code>, <code>smart_paste</code>,
+  <code>type</code>, <code>select_option</code>, <code>check</code>, <code>submit</code>.
+  Labels are wired with <code>for</code> so label-based targeting resolves.
+</p>
+<form id="contact-form" onsubmit="event.preventDefault(); log('form submitted');">
+  <label for="first_name">First name</label>
+  <input id="first_name" name="first_name" type="text" />
+
+  <label for="last_name">Last name</label>
+  <input id="last_name" name="last_name" type="text" />
+
+  <label for="email">Email address</label>
+  <input id="email" name="email" type="email" />
+
+  <label for="phone">Phone number</label>
+  <input id="phone" name="phone" type="tel" />
+
+  <label for="company">Company</label>
+  <input id="company" name="company" type="text" />
+
+  <label for="job_title">Job title</label>
+  <input id="job_title" name="job_title" type="text" />
+
+  <label for="country">Country</label>
+  <select id="country" name="country">
+    <option value="">Choose…</option>
+    <option value="us">United States</option>
+    <option value="fr">France</option>
+    <option value="jp">Japan</option>
+  </select>
+
+  <label style="display:flex;align-items:center;gap:8px;font-weight:400;margin-top:14px">
+    <input id="subscribe" type="checkbox" style="width:auto" /> Subscribe to updates
+  </label>
+
+  <div class="row">
+    <button class="primary" type="submit">Save changes</button>
+    <button type="button" data-testid="reset-btn" onclick="document.getElementById('contact-form').reset(); log('form reset')">Reset</button>
+    <button type="button" disabled>Disabled button</button>
+  </div>
+</form>
+<div class="log" id="log">Waiting…</div>
+
+<!-- Sample paste block: copy this, then run Smart Paste on the form above. -->
+<p class="hint" style="margin-top:14px">Copy this block, then run <strong>Smart Paste</strong>:</p>
+<pre style="background:#f9fafb;border:1px solid var(--line);border-radius:7px;padding:12px;font-size:13px">Dr. Priya Nair
+Chief Medical Officer
+Helix Bio Inc.
+priya.nair@helixbio.com
+(617) 555-0198
+Boston, MA</pre>
+
+<!-- ─────────── TABLE: extract_table · export_data ─────────── -->
+<h2>2. Data table</h2>
+<p class="hint">Tests <code>extract_table</code> and <code>export_data</code> (CSV / Excel / JSON).</p>
+<table>
+  <tr><th>Product</th><th>SKU</th><th>Price</th><th>Stock</th></tr>
+  <tr><td>Widget A</td><td>WA-001</td><td>$19.99</td><td>142</td></tr>
+  <tr><td>Widget B</td><td>WB-002</td><td>$24.50</td><td>87</td></tr>
+  <tr><td>Gadget Pro</td><td>GP-010</td><td>$149.00</td><td>12</td></tr>
+  <tr><td>Gizmo Mini</td><td>GM-003</td><td>$9.00</td><td>0</td></tr>
+</table>
+
+<!-- ─────────── EXTRACTION: emails · prices · links ─────────── -->
+<h2>3. Extraction targets</h2>
+<p class="hint">
+  Tests <code>extract_emails</code> (case-insensitive dedupe),
+  <code>extract_prices</code> (both decimal conventions), <code>extract_links</code>.
+</p>
+<p>
+  Reach sales at <strong>sales@example.com</strong> or Sales@Example.com — the same
+  address twice, so a correct extractor returns it once. Support is
+  support@helixbio.co.uk and billing@example.org.
+</p>
+<p>
+  Prices in several shapes: $1,234.56 · €1.234,56 · £99.00 · ¥15000 · 249 USD · 89,90 EUR
+</p>
+<p>
+  Links:
+  <a href="https://example.com/internal">internal</a> ·
+  <a href="https://other-domain.test/external">external</a> ·
+  <a href="#anchor">fragment (should be skipped)</a> ·
+  <a href="javascript:alert('xss')">javascript: (must be skipped)</a>
+</p>
+
+<!-- ─────────── INTERACTION: click · hover · press_key · scroll ─────────── -->
+<h2>4. Interaction</h2>
+<p class="hint">
+  Tests <code>click</code> by visible text, by <code>data-testid</code>, and by CSS;
+  plus <code>hover</code> and <code>press_key</code>.
+</p>
+<div class="row">
+  <button onclick="log('clicked: Continue')">Continue</button>
+  <button data-testid="submit-order" onclick="log('clicked: testid submit-order')">Place order</button>
+  <button id="css-target" onclick="log('clicked: #css-target')">CSS target</button>
+  <button onmouseenter="log('hovered')">Hover me</button>
+</div>
+<div class="row">
+  <input id="keypress-input" placeholder="Press Enter here"
+         onkeydown="if(event.key==='Enter') log('Enter pressed')" />
+</div>
+
+<!-- Nested text, to check innermost-match resolution -->
+<div style="margin-top:12px" onclick="log('OUTER clicked — wrong target')">
+  <span onclick="event.stopPropagation(); log('INNER clicked — correct')"
+        style="border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer">
+    Nested click target
+  </span>
+</div>
+
+<!-- ─────────── VISIBILITY ─────────── -->
+<h2>5. Visibility handling</h2>
+<p class="hint">
+  A hidden element must be reported as “found but not visible”, never clicked.
+  The delayed element tests <code>wait_for_element</code>.
+</p>
+<button id="hidden-btn" style="display:none">Hidden button</button>
+<button id="aria-hidden-btn" aria-hidden="true">Aria-hidden button</button>
+<div class="row">
+  <button onclick="showLate()">Reveal delayed element (1.5s)</button>
+</div>
+<div id="late-slot"></div>
+
+<!-- ─────────── CONTENTEDITABLE ─────────── -->
+<h2>6. Rich text</h2>
+<p class="hint">Tests <code>type</code> into a <code>contenteditable</code> region.</p>
+<div id="editor" class="editable" contenteditable="true">Click and type here…</div>
+
+<!-- ─────────── FILES ─────────── -->
+<h2>7. Files</h2>
+<p class="hint">Tests <code>upload_file</code> and <code>download_file</code> (both need confirmation).</p>
+<div class="row">
+  <input id="file-input" type="file" style="max-width:320px" onchange="log('file selected: ' + (this.files[0]?.name ?? 'none'))" />
+  <a href="data:text/csv;charset=utf-8,name%2Cemail%0AAda%2Cada%40example.com" download="sample.csv">Download sample.csv</a>
+</div>
+
+<!-- ─────────── LONG TEXT: read_page · summarize · translate ─────────── -->
+<h2>8. Article text</h2>
+<p class="hint">Tests <code>read_page</code>, <code>summarize</code>, <code>translate</code>, <code>ask_ai</code>.</p>
+<article>
+  <p>
+    Browser automation has historically meant brittle scripts: a selector recorded on
+    Tuesday breaks on Wednesday because a framework re-rendered the DOM. The usual
+    response is to record more selectors, which multiplies the maintenance rather
+    than reducing it.
+  </p>
+  <p>
+    A more durable approach separates intent from mechanism. The intent — “capture the
+    contact on this page and push it to the CRM” — is stable across redesigns. The
+    mechanism — which element to click — is not, and should be resolved at execution
+    time against whatever the page currently is, with fallbacks when the first
+    strategy misses.
+  </p>
+  <p>
+    That separation also changes where cost lands. Most requests fall into a small
+    number of recognisable shapes, and those need no model call at all. Reserving
+    inference for genuine ambiguity keeps the median request free and fast, and makes
+    the expensive path the exception rather than the rule.
+  </p>
+</article>
+
+<!-- ─────────── ASSERTIONS ─────────── -->
+<h2>9. Assertion target</h2>
+<p class="hint">Tests <code>assert_text</code>. This page contains the phrase below.</p>
+<p><strong>Order confirmed</strong> — reference TP-2026-0042.</p>
+
+<script>
+  function log(message) {
+    document.getElementById('log').textContent =
+      new Date().toLocaleTimeString() + '  ' + message;
+  }
+  function showLate() {
+    const slot = document.getElementById('late-slot');
+    slot.innerHTML = '';
+    setTimeout(() => {
+      const el = document.createElement('button');
+      el.id = 'late-element';
+      el.textContent = 'I appeared late';
+      el.onclick = () => log('clicked the delayed element');
+      slot.appendChild(el);
+      log('delayed element inserted');
+    }, 1500);
+  }
+</script>
+</body>
+</html>

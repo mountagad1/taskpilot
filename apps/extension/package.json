@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:dev": "node scripts/build.mjs --dev",
+    "watch": "node scripts/build.mjs --dev --watch",
     "package": "node scripts/build.mjs && node scripts/zip.mjs",
     "type-check": "tsc --noEmit",
-    "clean": "rm -rf dist *.zip"
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
     "@taskpilot/browser-tools": "workspace:*",
