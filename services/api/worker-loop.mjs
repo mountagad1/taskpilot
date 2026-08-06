@@ -8,6 +8,24 @@
 // equivalent) at the same endpoint instead of running this process.
 // ============================================================
 
+import { existsSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// Same .env handling as the server — this process needs WORKER_SECRET, and
+// reads it from the same file rather than requiring a shell export.
+const here = dirname(fileURLToPath(import.meta.url))
+for (const name of ['.env.local', '.env']) {
+  const file = resolve(here, name)
+  if (existsSync(file)) {
+    try {
+      process.loadEnvFile(file)
+    } catch (error) {
+      console.warn(`[env] could not read ${file}: ${error.message}`)
+    }
+  }
+}
+
 const BASE_URL = process.env.TASKPILOT_API_URL ?? 'http://localhost:4000'
 const SECRET = process.env.WORKER_SECRET
 const INTERVAL_MS = Number(process.env.WORKER_INTERVAL_MS ?? 30_000)

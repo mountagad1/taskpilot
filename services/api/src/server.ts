@@ -3,6 +3,10 @@
 // services/api/src/server.ts
 // ============================================================
 
+// Must be first: populates process.env from services/api/.env before any
+// module that reads a credential is evaluated.
+import { loadedEnvFiles } from "./load-env";
+
 import { serve } from "@hono/node-server";
 
 import { createApp } from "./app";
@@ -27,10 +31,23 @@ const server = serve({ fetch: app.fetch, port }, (info) => {
     ["redis", Boolean(process.env.UPSTASH_REDIS_REST_URL)],
   ] as const;
 
-  const off = status.filter(([, on]) => !on).map(([name]) => name);
+  // Name the env file that was read. When nothing is configured, the first
+  // question is always whether the file was even found.
+  console.log(
+    loadedEnvFiles.length
+      ? `\n  env       ${loadedEnvFiles.join(", ")}`
+      : "\n  env       no .env file found (using the ambient environment)"
+  );
+
+  const on = status.filter(([, live]) => live).map(([name]) => name);
+  if (on.length) console.log(`  live      ${on.join(", ")}`);
+
+  const off = status.filter(([, live]) => !live).map(([name]) => name);
   if (off.length) {
-    console.log(`\n  not configured: ${off.join(", ")}`);
+    console.log(`  disabled  ${off.join(", ")}`);
     console.log("  (those features return 503; everything else works)\n");
+  } else {
+    console.log("");
   }
 });
 
