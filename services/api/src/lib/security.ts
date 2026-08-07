@@ -29,6 +29,18 @@ const RATE_LIMITS: Record<string, RateLimitConfig> = {
  */
 const localWindows = new Map<string, { count: number; resetAt: number }>();
 
+/**
+ * Test seam: clears the in-process counters.
+ *
+ * Windows are keyed by path and caller and last a full minute, so without
+ * this one test that exercises a limit starves every later test in the same
+ * file — a failure that looks like a broken route rather than a shared
+ * counter.
+ */
+export function resetRateLimits(): void {
+  localWindows.clear();
+}
+
 function localRateLimit(key: string, config: RateLimitConfig) {
   const now = Date.now();
   const existing = localWindows.get(key);

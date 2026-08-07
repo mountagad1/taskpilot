@@ -49,13 +49,14 @@ describe('migrations apply', () => {
       '004_runtime.sql',
       '005_teams.sql',
       '006_platform.sql',
+      '007_oauth.sql',
     ])
   })
 
   it('creates every table the application depends on', async () => {
     const expected = [
       'profiles', 'user_settings', 'subscriptions', 'usage_periods', 'ai_requests',
-      'workflows', 'workflow_runs', 'integrations', 'saved_prompts',
+      'workflows', 'workflow_runs', 'integrations', 'saved_prompts', 'oauth_states',
       'marketplace_agents', 'agent_versions', 'agent_installs', 'agent_reviews', 'agent_purchases',
       'agent_runs', 'agent_run_steps', 'stored_files',
       'teams', 'team_members', 'team_invites', 'agent_shares',
@@ -646,5 +647,145 @@ describe('row level security', () => {
   it('keeps the job queue unreachable from an authenticated client', async () => {
     const result = await as(alice, () => db.query(`SELECT * FROM job_queue`))
     expect(result.rows).toHaveLength(0)
+  })
+})
+
+// ─── OAUTH (007) ─────────────────────────────────────────────
+
+describe('oauth integrations', () => {
+  it('stores an authorization state bound to a user', async () => {
+    const state = 'state-' + Math.random().toString(36).slice(2)
+    await db.query(
+      `INSERT INTO oauth_states (state, user_id, provider, redirect_uri, expires_at)
+       VALUES ($1,$2,'hubspot','https://api.test/cb', NOW() + INTERVAL '10 minutes')`,
+      [state, alice]
+    )
+    const result = await db.query(`SELECT user_id, provider, consumed_at FROM oauth_states WHERE state = $1`, [state])
+    expect(result.rows[0].user_id).toBe(alice)
+    expect(result.rows[0].provider).toBe('hubspot')
+    // A fresh state must not look consumed.
+    expect(result.rows[0].consumed_at).toBeNull()
+  })
+
+  it('rejects a state for a provider outside the enum', async () => {
+    await expect(
+      db.query(
+        `INSERT INTO oauth_states (state, user_id, provider, redirect_uri, expires_at)
+         VALUES ('s2',$1,'facebook','https://api.test/cb', NOW() + INTERVAL '1 minute')`,
+        [alice]
+      )
+    ).rejects.toThrow()
+  })
+
+  it('removes a state when its user is deleted', async () => {
+    // An orphaned state would let a flow complete against a dead account.
+    const victim = await newUser('victim-oauth@example.com')
+    await db.query(
+      `INSERT INTO oauth_states (state, user_id, provider, redirect_uri, expires_at)
+       VALUES ('cascade-me',$1,'hubspot','https://api.test/cb', NOW() + INTERVAL '5 minutes')`,
+      [victim]
+    )
+    await db.query(`DELETE FROM profiles WHERE id = $1`, [victim])
+    const result = await db.query(`SELECT 1 FROM oauth_states WHERE state = 'cascade-me'`)
+    expect(result.rows).toHaveLength(0)
+  })
+
+  it('refuses two states with the same value', async () => {
+    await db.query(
+      `INSERT INTO oauth_states (state, user_id, provider, redirect_uri, expires_at)
+       VALUES ('duplicate',$1,'hubspot','https://api.test/cb', NOW() + INTERVAL '5 minutes')`,
+      [alice]
+    )
+    await expect(
+      db.query(
+        `INSERT INTO oauth_states (state, user_id, provider, redirect_uri, expires_at)
+         VALUES ('duplicate',$1,'hubspot','https://api.test/cb', NOW() + INTERVAL '5 minutes')`,
+        [alice]
+      )
+    ).rejects.toThrow()
+  })
+
+  it('purges only states that are well past expiry', async () => {
+    await db.query(
+      `INSERT INTO oauth_states (state, user_id, provider, redirect_uri, expires_at) VALUES
+        ('old-1',$1,'hubspot','https://api.test/cb', NOW() - INTERVAL '3 hours'),
+        ('recent-1',$1,'hubspot','https://api.test/cb', NOW() - INTERVAL '5 minutes'),
+        ('live-1',$1,'hubspot','https://api.test/cb', NOW() + INTERVAL '5 minutes')`,
+      [alice]
+    )
+    await db.query(`SELECT purge_expired_oauth_states()`)
+
+    const remaining = await db.query(
+      `SELECT state FROM oauth_states WHERE state IN ('old-1','recent-1','live-1') ORDER BY state`
+    )
+    // The one-hour grace keeps a just-expired row available so the callback
+    // can report "expired" rather than "not recognised".
+    expect(remaining.rows.map((r) => r.state)).toEqual(['live-1', 'recent-1'])
+  })
+
+  it('defaults new integration columns so existing rows stay valid', async () => {
+    const user = await newUser('defaults-oauth@example.com')
+    await db.query(
+      `INSERT INTO integrations (user_id, provider, access_token) VALUES ($1,'hubspot','ciphertext')`,
+      [user]
+    )
+    const result = await db.query(
+      `SELECT scopes, token_encrypted, refresh_error FROM integrations WHERE user_id = $1`,
+      [user]
+    )
+    expect(result.rows[0].scopes).toEqual([])
+    // Defaults to false: a pre-existing row holds plaintext until reconnected.
+    expect(result.rows[0].token_encrypted).toBe(false)
+    expect(result.rows[0].refresh_error).toBeNull()
+  })
+
+  it('allows one connection per provider per user', async () => {
+    const user = await newUser('unique-oauth@example.com')
+    await db.query(
+      `INSERT INTO integrations (user_id, provider, access_token) VALUES ($1,'hubspot','a')`,
+      [user]
+    )
+    await expect(
+      db.query(`INSERT INTO integrations (user_id, provider, access_token) VALUES ($1,'hubspot','b')`, [user])
+    ).rejects.toThrow()
+    // A different provider for the same user is still allowed.
+    await db.query(`INSERT INTO integrations (user_id, provider, access_token) VALUES ($1,'notion','c')`, [user])
+  })
+
+  it('exposes no token columns through the connections view', async () => {
+    const result = await db.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = 'integration_connections'`
+    )
+    const columns = result.rows.map((r) => r.column_name)
+    expect(columns).toContain('workspace_name')
+    expect(columns).toContain('needs_reconnect')
+    expect(columns).not.toContain('access_token')
+    expect(columns).not.toContain('refresh_token')
+  })
+
+  it('keeps oauth_states unreachable from an authenticated client', async () => {
+    // RLS is enabled with no permissive policy: an in-flight state is a
+    // bearer value, and only the service role may see one.
+    await db.query(
+      `INSERT INTO oauth_states (state, user_id, provider, redirect_uri, expires_at)
+       VALUES ('hidden',$1,'hubspot','https://api.test/cb', NOW() + INTERVAL '5 minutes')`,
+      [alice]
+    )
+    const result = await as(alice, () => db.query(`SELECT * FROM oauth_states`))
+    expect(result.rows).toHaveLength(0)
+  })
+
+  it('does not let one user read another user integration', async () => {
+    const owner = await newUser('rls-owner-oauth@example.com')
+    const other = await newUser('rls-other-oauth@example.com')
+    await db.query(
+      `INSERT INTO integrations (user_id, provider, access_token) VALUES ($1,'hubspot','secret')`,
+      [owner]
+    )
+    const mine = await as(owner, () => db.query(`SELECT provider FROM integrations`))
+    expect(mine.rows).toHaveLength(1)
+
+    const theirs = await as(other, () => db.query(`SELECT provider FROM integrations`))
+    expect(theirs.rows).toHaveLength(0)
   })
 })

@@ -251,6 +251,84 @@ and day-of-week fields are restricted they are OR-ed, not AND-ed.
 
 ---
 
+## Integrations (OAuth)
+
+Connects a user's CRM through the authorization-code flow. Currently
+implemented: **HubSpot**.
+
+`GET /v1/integrations/status` — unauthenticated readiness probe. Reports
+whether the deployment has credentials and an encryption key, and prints the
+**exact redirect URI** that must be registered on the HubSpot app. Check this
+first; a redirect URI that differs by even a trailing slash fails the
+exchange with a message that does not say why.
+
+### `POST /v1/integrations/{provider}/authorize`
+
+Session credential only. Returns the consent URL to send the browser to.
+
+```jsonc
+// Request (all optional)
+{ "scopes": ["oauth", "crm.objects.contacts.write"], "return_to": "/dashboard/agents" }
+
+// Response
+{ "data": { "authorize_url": "https://app.hubspot.com/oauth/authorize?…",
+            "state": "…", "expires_in": 600,
+            "redirect_uri": "https://api.taskpilot.cc/v1/integrations/hubspot/callback" } }
+```
+
+`return_to` is validated against the dashboard origin. A foreign origin is
+dropped rather than honoured — reflecting it would make this an open
+redirect.
+
+### `GET /v1/integrations/{provider}/callback`
+
+Called by the provider, not by you. **Unauthenticated by necessity**: it
+arrives as a top-level browser navigation carrying no credential, so the
+`state` parameter is the entire binding to the user who began the flow.
+State is random, single-use, expires in 10 minutes, and is compared in
+constant time. It is consumed *before* the token exchange, so a failed
+exchange cannot be retried with the same link.
+
+Always redirects — never returns JSON — because a person is waiting in a
+browser. Success lands on `?connected=hubspot`; every failure lands on
+`?error=<reason>`.
+
+### `POST /v1/integrations/{provider}/push`
+
+```jsonc
+{ "records": [ { "email": "ada@example.com", "firstname": "Ada", "company": "…" } ] }
+```
+
+Requires `runs:write`. Refreshes the access token first if it expires within
+5 minutes. Batches of 100; up to 1000 records per request. Unknown keys pass
+through as custom HubSpot properties; empty and null values are dropped
+rather than blanking an existing field.
+
+If the connection was granted read-only access the call fails **403 before
+contacting HubSpot**, naming the missing scope — HubSpot's own error is a
+bare 403 that does not say which scope is absent.
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/v1/integrations` | Connections. Never includes tokens. `needs_reconnect` flags a dead grant |
+| `DELETE` | `/v1/integrations/{provider}` | Removes the stored grant |
+
+### Token handling
+
+Access and refresh tokens are encrypted with **AES-256-GCM** before storage
+and never leave the API — not to the dashboard, not to the extension. A
+HubSpot refresh token does not expire on its own, so a database dump holding
+one in plaintext would be a standing breach.
+
+`INTEGRATION_ENCRYPTION_KEY` is required. Without it the API refuses to
+*start* a flow rather than completing one it cannot store safely.
+
+A refresh that fails records the reason and marks the connection
+`needs_reconnect`, so the dashboard can prompt for a reconnect instead of
+every run failing with an unexplained 401.
+
+---
+
 ## Teams, notifications, keys
 
 | Method | Path | Notes |

@@ -12,6 +12,7 @@ import { API_SCOPES } from "@taskpilot/shared";
 
 import { agentRoutes } from "./routes/agents";
 import { authRoutes } from "./routes/auth";
+import { integrationRoutes } from "./routes/integrations";
 import { runRoutes } from "./routes/runs";
 import {
   keyRoutes,
@@ -153,6 +154,14 @@ export function createApp(): Hono {
             cancel: "POST /v1/runs/{id}/cancel",
           },
           workflows: { list: "GET /v1/workflows", create: "POST /v1/workflows" },
+          integrations: {
+            list: "GET /v1/integrations",
+            status: "GET /v1/integrations/status",
+            authorize: "POST /v1/integrations/{provider}/authorize",
+            callback: "GET /v1/integrations/{provider}/callback",
+            push: "POST /v1/integrations/{provider}/push",
+            disconnect: "DELETE /v1/integrations/{provider}",
+          },
           marketplace: { browse: "GET /v1/marketplace/agents" },
           exports: { create: "POST /v1/exports" },
           auth: {
@@ -191,6 +200,7 @@ export function createApp(): Hono {
   v1.route("/notifications", notificationRoutes);
   v1.route("/teams", teamRoutes);
   v1.route("/keys", keyRoutes);
+  v1.route("/integrations", integrationRoutes);
   v1.route("/marketplace", marketplaceRoutes);
   v1.route("/analytics", analyticsRoutes);
   v1.route("/exports", exportRoutes);
