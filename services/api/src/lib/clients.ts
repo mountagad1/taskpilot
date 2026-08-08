@@ -13,6 +13,7 @@
 
 import Stripe from "stripe";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import WebSocket from "ws";
 
 import { notConfigured } from "./errors";
 
@@ -53,7 +54,19 @@ export function getAdminClient(): SupabaseClient {
     adminSingleton = createClient(
       required("SUPABASE_URL"),
       required("SUPABASE_SERVICE_ROLE_KEY"),
-      { auth: { persistSession: false, autoRefreshToken: false } }
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+        // supabase-js builds a Realtime client eagerly, and Realtime needs a
+        // global WebSocket. Node did not ship one until 22, so on Node 20 —
+        // which this project supports and CI runs — construction throws and
+        // EVERY database call fails, including sign-up. The error names
+        // Realtime, which is misleading: nothing here subscribes to it.
+        //
+        // Supplying a transport satisfies the constructor. No connection is
+        // opened unless a channel is actually subscribed to, so this costs
+        // nothing at runtime.
+        realtime: { transport: WebSocket as unknown as never },
+      }
     );
   }
   return adminSingleton;
