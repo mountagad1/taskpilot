@@ -73,13 +73,23 @@ function redirectUri(provider: string): string {
 function safeReturnTo(candidate: string | null): string | null {
   if (!candidate) return null;
 
+  const appOrigin = (process.env.PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+
+  // Resolve everything — relative or absolute — against the dashboard
+  // origin, then check the result. Deciding on the raw string invites
+  // protocol-relative tricks: browsers treat a backslash as a slash when
+  // resolving, so "/\evil.example/steal" is NOT a same-origin path even
+  // though it starts with a single "/". Letting the URL parser normalise
+  // first, and judging only the resulting origin, removes that whole class
+  // of bypass rather than blacklisting the spellings we thought of.
   let url: URL;
   try {
-    url = new URL(candidate);
+    url = new URL(candidate, `${appOrigin}/`);
   } catch {
-    // A relative path cannot leave the origin, so it is safe as-is.
-    return candidate.startsWith("/") && !candidate.startsWith("//") ? candidate : null;
+    return null;
   }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
 
   const allowed = [
     process.env.PUBLIC_APP_URL,
@@ -95,7 +105,13 @@ function safeReturnTo(candidate: string | null): string | null {
   });
 
   if (permitted) return url.toString();
-  if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return url.toString();
+
+  // Loopback is a development convenience. In production it is a redirect
+  // to an arbitrary port on the victim's own machine, which is a real
+  // target where a local service is listening.
+  const isLoopback = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  if (isLoopback && process.env.NODE_ENV !== "production") return url.toString();
+
   return null;
 }
 
@@ -158,7 +174,13 @@ integrationRoutes.post("/:provider/authorize", guard({ allow: ["session"], rateL
   hubspot.hubspotCredentials(); // throws not_configured with the exact variables
 
   const body = await readJson(c).catch(() => ({}) as Record<string, unknown>);
-  const requestedScopes = Array.isArray(body.scopes) ? (body.scopes as string[]) : undefined;
+
+  // An empty array is not a request for "no scopes" — it is a caller that
+  // built the field and left it blank. Treating it as an override sends the
+  // user to a consent screen granting nothing, which succeeds and then
+  // fails confusingly on the first push.
+  const requestedScopes =
+    Array.isArray(body.scopes) && body.scopes.length > 0 ? (body.scopes as string[]) : undefined;
   const returnTo = safeReturnTo(typeof body.return_to === "string" ? body.return_to : null);
 
   const state = randomToken(32);
@@ -199,10 +221,16 @@ integrationRoutes.post("/:provider/authorize", guard({ allow: ["session"], rateL
  * JSON — the user is sitting in a browser, not reading a response body.
  */
 integrationRoutes.get("/:provider/callback", async (c) => {
-  const provider = assertSupported(c.req.param("provider"));
-
+  // Defined before anything that can fail. This route's contract is that it
+  // ALWAYS redirects — a person is sitting in a browser, and a JSON error
+  // body is a dead end for them. Validating the provider first would throw
+  // an ApiError and render exactly that.
   const fail = (reason: string) =>
     c.redirect(`${appUrl("/dashboard/integrations")}?error=${encodeURIComponent(reason)}`);
+
+  const requested = c.req.param("provider").toLowerCase();
+  if (!SUPPORTED.has(requested)) return fail(`${requested} is not an available integration`);
+  const provider = requested;
 
   if (!hasSupabaseCredentials()) return fail("This deployment has no database configured");
 
@@ -239,13 +267,19 @@ integrationRoutes.get("/:provider/callback", async (c) => {
 
   // Burn the state before the exchange. If the exchange fails the user
   // restarts the flow; leaving it live would allow a replay.
-  const { data: claimed } = await admin
+  const { data: claimed, error: claimError } = await admin
     .from("oauth_states")
     .update({ consumed_at: new Date().toISOString() })
     .eq("state", presentedState)
     .is("consumed_at", null)
     .select("state")
     .maybeSingle();
+
+  // A database fault and a lost race both leave `claimed` null, but they
+  // need opposite advice: one is "try again", the other is "you cannot".
+  // Reporting a transient fault as "already used" sends the user hunting
+  // for a problem that is not theirs, and the state is in fact still live.
+  if (claimError) return fail(`Could not complete the authorization: ${claimError.message}`);
 
   // Lost the race against a concurrent callback with the same state.
   if (!claimed) return fail("This authorization link has already been used");

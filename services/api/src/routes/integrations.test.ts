@@ -184,7 +184,7 @@ beforeAll(async () => {
         scopes: ['oauth', 'crm.objects.contacts.read', 'crm.objects.contacts.write'],
       })
     }
-    if (url.pathname === '/crm/v3/objects/contacts/batch/create') {
+    if (url.pathname.startsWith('/crm/v3/objects/contacts/batch/')) {
       return json(res, 201, { results: [{ id: 'contact-1' }] })
     }
     json(res, 404, { message: 'not found' })
@@ -580,5 +580,94 @@ describe('DELETE /v1/integrations/:provider', () => {
   it('requires authentication', async () => {
     const response = await call('/v1/integrations/hubspot', { method: 'DELETE' })
     expect(response.status).toBe(401)
+  })
+})
+
+// ─── REDIRECT SAFETY AND CALLBACK CONTRACT ───────────────────
+
+describe('return_to cannot be used as an open redirect', () => {
+  const start = async (returnTo: string) => {
+    await authed('/v1/integrations/hubspot/authorize', {
+      method: 'POST',
+      body: JSON.stringify({ return_to: returnTo }),
+    })
+    return tables.oauth_states[tables.oauth_states.length - 1]
+  }
+
+  // Built from a char code so no layer between here and the assertion can
+  // quietly eat the backslash — which is exactly how this bug hides.
+  const BACKSLASH = String.fromCharCode(92)
+
+  it('rejects a backslash-prefixed path that resolves off-origin', async () => {
+    // "/\evil.example/steal" begins with a single slash, so a naive
+    // startsWith('//') check passes it — but URL parsing treats the
+    // backslash as a slash, and the origin becomes evil.example.
+    const candidate = '/' + BACKSLASH + 'evil.example/steal'
+    expect(new URL(candidate, 'http://app.test/').origin).toBe('http://evil.example')
+
+    expect((await start(candidate)).return_to).toBeNull()
+  })
+
+  it('rejects a leading double backslash', async () => {
+    const candidate = BACKSLASH + BACKSLASH + 'evil.example/steal'
+    expect((await start(candidate)).return_to).toBeNull()
+  })
+
+  it('rejects a protocol-relative URL', async () => {
+    expect((await start('//evil.example/steal')).return_to).toBeNull()
+  })
+
+  it('rejects a javascript: payload', async () => {
+    expect((await start('javascript:alert(1)')).return_to).toBeNull()
+  })
+
+  it('resolves a plain relative path against the dashboard origin', async () => {
+    // Emitted from the API origin, a bare path would land on the API rather
+    // than the dashboard.
+    expect((await start('/dashboard/agents')).return_to).toBe('http://app.test/dashboard/agents')
+  })
+
+  it('allows loopback outside production', async () => {
+    // A convenience for local development, where the dashboard genuinely
+    // runs on a port that is not PUBLIC_APP_URL.
+    expect((await start('http://localhost:9999/x')).return_to).toBe('http://localhost:9999/x')
+  })
+
+  it('rejects loopback in production', async () => {
+    // In production this is a redirect to an arbitrary port on the victim's
+    // own machine, where something is usually listening.
+    const saved = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    try {
+      expect((await start('http://localhost:9999/x')).return_to).toBeNull()
+    } finally {
+      process.env.NODE_ENV = saved
+    }
+  })
+})
+
+describe('callback always redirects', () => {
+  it('redirects rather than returning JSON for an unimplemented provider', async () => {
+    // The route contract is that a person in a browser always lands
+    // somewhere. Validating the provider by throwing would render JSON.
+    const response = await call('/v1/integrations/salesforce/callback?code=x&state=y')
+    expect(response.status).toBe(302)
+    expect(decodeURIComponent(response.headers.get('location')!)).toMatch(/not an available integration/)
+  })
+})
+
+describe('authorize scope handling', () => {
+  it('treats an empty scopes array as "use the defaults"', async () => {
+    // An empty array is a caller that built the field and left it blank,
+    // not a request to grant nothing.
+    const payload = await body(
+      await authed('/v1/integrations/hubspot/authorize', {
+        method: 'POST',
+        body: JSON.stringify({ scopes: [] }),
+      })
+    )
+    const scope = new URL(payload.data.authorize_url).searchParams.get('scope')
+    expect(scope).toBeTruthy()
+    expect(scope).toContain('crm.objects.contacts.write')
   })
 })

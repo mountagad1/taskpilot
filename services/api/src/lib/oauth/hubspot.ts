@@ -229,6 +229,28 @@ export interface PushResult {
   ids: string[];
 }
 
+/** Shape of a HubSpot batch response, success or partial. */
+interface BatchResponse {
+  results?: Array<{ id?: string; new?: boolean; properties?: Record<string, unknown> }>;
+  errors?: Array<{ message?: string; context?: { ids?: string[] } }>;
+  numErrors?: number;
+  status?: string;
+  message?: string;
+}
+
+/** Turns one caller record into HubSpot's `{ properties }` shape. */
+function toProperties(record: ContactRecord): Record<string, string> {
+  const properties: Record<string, string> = {};
+  for (const [k, v] of Object.entries(record)) {
+    // Null and empty are dropped rather than sent: HubSpot rejects a null
+    // property, and writing "" would blank a real value on an existing
+    // contact, which is destructive on an update.
+    if (v === undefined || v === null || v === "") continue;
+    properties[k] = String(v);
+  }
+  return properties;
+}
+
 /** HubSpot's batch endpoint caps at 100 objects per call. */
 const BATCH_LIMIT = 100;
 
@@ -236,6 +258,15 @@ const BATCH_LIMIT = 100;
  * Pushes contacts, keyed on email so a re-run updates rather than
  * duplicating. Scraped pages produce the same person more than once, and a
  * CRM full of duplicates is worse than no push at all.
+ *
+ * Records carrying an email go through `batch/upsert` with `email` as the
+ * id property — that is what actually makes the operation idempotent.
+ * `batch/create` cannot: it rejects a duplicate email, and because HubSpot
+ * fails the whole batch on a conflict, one already-known address would sink
+ * the other 99 records alongside it.
+ *
+ * Records with no email cannot be matched against anything, so they can
+ * only be created.
  */
 export async function pushContacts(
   accessToken: string,
@@ -247,63 +278,93 @@ export async function pushContacts(
 
   const result: PushResult = { created: 0, updated: 0, failed: [], ids: [] };
 
-  for (let offset = 0; offset < records.length; offset += BATCH_LIMIT) {
-    const slice = records.slice(offset, offset + BATCH_LIMIT);
+  // Keep the caller's original index on each record: a failure has to be
+  // reportable against the input the caller actually sent, not against a
+  // position in some regrouped batch they never saw.
+  const withEmail: Array<{ index: number; record: ContactRecord }> = [];
+  const withoutEmail: Array<{ index: number; record: ContactRecord }> = [];
 
-    const inputs = slice.map((record) => {
-      const { email, firstname, lastname, phone, company, jobtitle, website, ...rest } = record;
-      const properties: Record<string, string> = {};
+  records.forEach((record, index) => {
+    const email = typeof record.email === "string" ? record.email.trim() : "";
+    (email ? withEmail : withoutEmail).push({ index, record });
+  });
 
-      for (const [k, v] of Object.entries({ email, firstname, lastname, phone, company, jobtitle, website, ...rest })) {
-        if (v === undefined || v === null || v === "") continue;
-        properties[k] = String(v);
+  const send = async (
+    path: string,
+    group: Array<{ index: number; record: ContactRecord }>,
+    buildInput: (entry: { index: number; record: ContactRecord }) => unknown
+  ) => {
+    for (let offset = 0; offset < group.length; offset += BATCH_LIMIT) {
+      const slice = group.slice(offset, offset + BATCH_LIMIT);
+
+      const response = await fetch(`${API_BASE()}${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ inputs: slice.map(buildInput) }),
+      });
+
+      const body = (await response.json().catch(() => ({}))) as BatchResponse;
+
+      if (response.status === 401) {
+        throw new ApiError(
+          "unauthorized",
+          "HubSpot rejected the access token. The integration must be reconnected."
+        );
       }
-      return { properties };
-    });
 
-    // `upsert` semantics: HubSpot's create endpoint 409s on a duplicate
-    // email, so anything already present is retried as an update keyed by
-    // the email property.
-    const response = await fetch(`${API_BASE()}/crm/v3/objects/contacts/batch/create`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ inputs }),
-    });
+      if (response.status === 403) {
+        throw new ApiError(
+          "forbidden",
+          `HubSpot refused the write: ${body.message ?? "the granted scopes do not permit creating contacts"}`
+        );
+      }
 
-    const body = (await response.json().catch(() => ({}))) as {
-      results?: Array<{ id?: string }>;
-      status?: string;
-      message?: string;
-      errors?: Array<{ message?: string }>;
-    };
+      // 207 MULTI_STATUS means some inputs succeeded and some did not. It
+      // passes `response.ok`, so treating ok as total success silently
+      // reports failures as writes that happened.
+      const partial = response.status === 207 || (body.errors?.length ?? 0) > 0;
 
-    if (response.status === 401) {
-      throw new ApiError("unauthorized", "HubSpot rejected the access token. The integration must be reconnected.");
+      if (!response.ok && !partial) {
+        const reason = body.message ?? `HTTP ${response.status}`;
+        slice.forEach((entry) => result.failed.push({ index: entry.index, reason }));
+        continue;
+      }
+
+      for (const row of body.results ?? []) {
+        if (row.id) result.ids.push(row.id);
+        // `new` distinguishes an insert from an update on upsert responses.
+        // Absent (plain create), everything is new.
+        if (row.new === false) result.updated++;
+        else result.created++;
+      }
+
+      // Whatever HubSpot reported as an error, surface it. The count of
+      // successes is authoritative from `results`, so anything unaccounted
+      // for is attributed here rather than quietly disappearing.
+      if (partial) {
+        const succeeded = body.results?.length ?? 0;
+        const messages = (body.errors ?? []).map((e) => e.message ?? "rejected by HubSpot");
+        const reason = messages[0] ?? "rejected by HubSpot";
+
+        slice.slice(succeeded).forEach((entry, i) => {
+          result.failed.push({ index: entry.index, reason: messages[i] ?? reason });
+        });
+      }
     }
+  };
 
-    if (response.status === 403) {
-      throw new ApiError(
-        "forbidden",
-        `HubSpot refused the write: ${body.message ?? "the granted scopes do not permit creating contacts"}`
-      );
-    }
+  await send("/crm/v3/objects/contacts/batch/upsert", withEmail, ({ record }) => ({
+    idProperty: "email",
+    id: String(record.email),
+    properties: toProperties(record),
+  }));
 
-    if (!response.ok) {
-      // A whole batch failing is recorded per-record so the caller can see
-      // which inputs were affected rather than a single opaque failure.
-      const reason = body.message ?? `HTTP ${response.status}`;
-      slice.forEach((_, i) => result.failed.push({ index: offset + i, reason }));
-      continue;
-    }
-
-    for (const created of body.results ?? []) {
-      if (created.id) result.ids.push(created.id);
-    }
-    result.created += body.results?.length ?? 0;
-  }
+  await send("/crm/v3/objects/contacts/batch/create", withoutEmail, ({ record }) => ({
+    properties: toProperties(record),
+  }));
 
   return result;
 }

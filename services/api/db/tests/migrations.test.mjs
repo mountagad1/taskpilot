@@ -789,3 +789,40 @@ describe('oauth integrations', () => {
     expect(theirs.rows).toHaveLength(0)
   })
 })
+
+// ─── VIEW SECURITY (007) ─────────────────────────────────────
+
+describe('integration_connections view', () => {
+  it('runs with invoker rights so RLS on the underlying table applies', async () => {
+    const result = await db.query(
+      `SELECT c.reloptions
+         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relname = 'integration_connections' AND n.nspname = 'public'`
+    )
+    // Without security_invoker the view runs definer-rights and does NOT
+    // consult the querying user's RLS — and PostgREST exposes it.
+    expect(String(result.rows[0]?.reloptions ?? '')).toMatch(/security_invoker=(true|on)/)
+  })
+
+  it('does not leak another user connections through the view', async () => {
+    const owner = await newUser('view-owner@example.com')
+    const snooper = await newUser('view-snooper@example.com')
+
+    await db.query(
+      `INSERT INTO integrations (user_id, provider, access_token, workspace_name)
+       VALUES ($1,'hubspot','ciphertext','owner-portal.hubspot.com')`,
+      [owner]
+    )
+
+    const mine = await as(owner, () =>
+      db.query(`SELECT workspace_name FROM integration_connections`)
+    )
+    expect(mine.rows).toHaveLength(1)
+
+    // The whole point of the finding: this must be empty.
+    const theirs = await as(snooper, () =>
+      db.query(`SELECT workspace_name FROM integration_connections`)
+    )
+    expect(theirs.rows).toHaveLength(0)
+  })
+})

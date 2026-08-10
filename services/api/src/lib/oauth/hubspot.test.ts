@@ -94,7 +94,10 @@ beforeAll(async () => {
     }
 
     // ── batch contact create ──
-    if (url.pathname === '/crm/v3/objects/contacts/batch/create') {
+    if (
+      url.pathname === '/crm/v3/objects/contacts/batch/create' ||
+      url.pathname === '/crm/v3/objects/contacts/batch/upsert'
+    ) {
       const parsed = JSON.parse(raw || '{}')
       if (batchHandler) return batchHandler(parsed, res)
       return json(res, 201, {
@@ -318,7 +321,7 @@ describe('pushContacts', () => {
     const records = Array.from({ length: 250 }, (_, i) => ({ email: `user${i}@example.com` }))
     const result = await pushContacts('access-initial', records)
 
-    const batches = received.filter((r) => r.path.endsWith('/batch/create'))
+    const batches = received.filter((r) => r.path.endsWith('/batch/upsert'))
     expect(batches).toHaveLength(3)
     expect(JSON.parse(batches[0].body).inputs).toHaveLength(100)
     expect(JSON.parse(batches[2].body).inputs).toHaveLength(50)
@@ -348,5 +351,76 @@ describe('pushContacts', () => {
 
   it('rejects an empty record list', async () => {
     await expect(pushContacts('access-initial', [])).rejects.toThrow(/non-empty/)
+  })
+})
+
+// ─── UPSERT AND PARTIAL FAILURE ──────────────────────────────
+
+describe('pushContacts — idempotency and partial failures', () => {
+  it('upserts on email so a re-run does not duplicate', async () => {
+    // batch/create rejects a duplicate email and fails the whole batch with
+    // it, so create is not usable for repeatable pushes.
+    await pushContacts('access-initial', [{ email: 'ada@example.com', firstname: 'Ada' }])
+
+    expect(last().path).toBe('/crm/v3/objects/contacts/batch/upsert')
+    const input = JSON.parse(last().body).inputs[0]
+    expect(input.idProperty).toBe('email')
+    expect(input.id).toBe('ada@example.com')
+  })
+
+  it('creates records that carry no email, since nothing can be matched on', async () => {
+    await pushContacts('access-initial', [{ firstname: 'Anonymous', company: 'Unknown Ltd' }])
+    expect(last().path).toBe('/crm/v3/objects/contacts/batch/create')
+    expect(JSON.parse(last().body).inputs[0].idProperty).toBeUndefined()
+  })
+
+  it('routes a mixed list to both endpoints', async () => {
+    await pushContacts('access-initial', [
+      { email: 'ada@example.com' },
+      { firstname: 'No Email' },
+    ])
+    const paths = received.filter((r) => r.path.includes('/batch/')).map((r) => r.path)
+    expect(paths).toContain('/crm/v3/objects/contacts/batch/upsert')
+    expect(paths).toContain('/crm/v3/objects/contacts/batch/create')
+  })
+
+  it('counts an update separately from a create', async () => {
+    batchHandler = (_b, res) =>
+      json(res, 200, { results: [{ id: 'c-1', new: true }, { id: 'c-2', new: false }] })
+
+    const result = await pushContacts('access-initial', [
+      { email: 'new@example.com' },
+      { email: 'existing@example.com' },
+    ])
+    expect(result.created).toBe(1)
+    expect(result.updated).toBe(1)
+  })
+
+  it('does not report a 207 partial failure as total success', async () => {
+    // 207 passes response.ok. Treating ok as success silently reports
+    // records as written that HubSpot rejected.
+    batchHandler = (_b, res) =>
+      json(res, 207, {
+        results: [{ id: 'c-1' }],
+        errors: [{ message: 'Property "phone" is invalid' }],
+        numErrors: 1,
+      })
+
+    const result = await pushContacts('access-initial', [
+      { email: 'ok@example.com' },
+      { email: 'bad@example.com', phone: 'nonsense' },
+    ])
+
+    expect(result.created).toBe(1)
+    expect(result.failed).toHaveLength(1)
+    expect(result.failed[0].reason).toMatch(/phone/)
+  })
+
+  it('reports failures against the caller original index', async () => {
+    batchHandler = (_b, res) => json(res, 400, { message: 'invalid property' })
+    // Only the second record has no email, so it goes to a different batch;
+    // its reported index must still be 1.
+    const result = await pushContacts('access-initial', [{ email: 'a@b.test' }, { firstname: 'X' }])
+    expect(result.failed.map((f) => f.index).sort()).toEqual([0, 1])
   })
 })

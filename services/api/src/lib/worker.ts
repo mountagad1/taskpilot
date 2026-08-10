@@ -161,6 +161,21 @@ const rollUpUsage: JobHandler = async (_job, db) => {
 /** Deletes expired export artefacts so storage doesn't grow without bound. */
 const sweepExpiredFiles: JobHandler = async (_job, db) => {
   await db.from("stored_files").delete().lt("expires_at", new Date().toISOString());
+
+  // Abandoned OAuth authorizations. Users close the tab at the provider's
+  // consent screen routinely, and each attempt leaves a row behind, so
+  // without a sweep this table only ever grows. 007 defines the function
+  // with a one-hour grace so a just-expired state can still be recognised
+  // and reported as expired rather than as unknown.
+  //
+  // Failure here must not fail the job: the file sweep above already
+  // succeeded, and retrying it is wasted work. A missing function means the
+  // deployment has not applied 007 yet, which is a migration problem rather
+  // than a job problem.
+  const { error } = await db.rpc("purge_expired_oauth_states");
+  if (error) {
+    console.warn(`[worker] could not purge oauth_states: ${error.message}`);
+  }
 };
 
 /** Placeholder delivery hook — email/push providers plug in here. */

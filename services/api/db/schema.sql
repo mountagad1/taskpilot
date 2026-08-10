@@ -1698,7 +1698,17 @@ ALTER TABLE oauth_states ENABLE ROW LEVEL SECURITY;
 -- `integrations` already carries "Users own integrations" from 001. Tokens
 -- must never reach the browser, so restrict the columns a user-facing
 -- client could read via a view rather than widening the table policy.
-CREATE OR REPLACE VIEW integration_connections AS
+--
+-- `security_invoker` is not optional here. A view runs with its OWNER's
+-- rights by default, which means it does NOT consult the querying user's
+-- RLS on the underlying table — and PostgREST exposes everything in
+-- `public`, so without this any authenticated user could read every
+-- tenant's connections by selecting from the view. Invoker rights make the
+-- existing "Users own integrations" policy apply to reads through it.
+--
+-- Requires PostgreSQL 15+. Supabase is well past that.
+CREATE OR REPLACE VIEW integration_connections
+WITH (security_invoker = true) AS
 SELECT
   id,
   user_id,
