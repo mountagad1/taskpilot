@@ -43,7 +43,9 @@ const NAV_SECTIONS: { label: string; items: { href: string; label: string; icon:
 ]
 
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
-  // RequireAuth has already resolved the session by the time this renders.
+  // Safe because the dashboard layout renders this inside RequireAuth,
+  // which resolves the session and supplies the provider before any child
+  // mounts. Rendered anywhere else, `useAuth` throws.
   const { email, plan } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
