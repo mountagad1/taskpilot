@@ -20,7 +20,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL('https://taskpilot.cc'),
   title: {
-    default: 'TaskPilot — Talk to any webpage instantly',
+    default: 'TaskPilot — The AI Agent for Your Browser',
     template: '%s | TaskPilot',
   },
   description:
@@ -45,7 +45,7 @@ export const metadata: Metadata = {
     locale: 'en_US',
     url: 'https://taskpilot.cc',
     siteName: 'TaskPilot',
-    title: 'TaskPilot — Talk to any webpage instantly',
+    title: 'TaskPilot — The AI Agent for Your Browser',
     description:
       'The AI operating layer for the browser. Autofill, extract, automate.',
     images: [
@@ -59,7 +59,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'TaskPilot — Talk to any webpage instantly',
+    title: 'TaskPilot — The AI Agent for Your Browser',
     description: 'The AI operating layer for the browser.',
     images: ['/og-image.png'],
     creator: '@taskpilotcc',
