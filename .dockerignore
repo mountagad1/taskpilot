@@ -1,11 +1,22 @@
+# Build artifacts and local state — never belong in the image.
 node_modules
 **/node_modules
 **/.next
 **/dist
 **/.turbo
+**/coverage
 .git
-apps/web
-apps/extension
+.github
+
+# Secrets. .env.example is kept: it documents the required variables.
 **/.env
 **/.env.*
 !**/.env.example
+
+# Frontend sources. Their package.json files are still copied explicitly by the
+# Dockerfile — pnpm --frozen-lockfile validates the lockfile against every
+# workspace project, so the manifests must be present even though the API build
+# never installs or compiles these apps.
+apps/web/src
+apps/web/public
+apps/extension/src
