@@ -1,0 +1,14 @@
+{
+  "name": "TaskPilot — The AI Agent for Your Browser",
+  "short_name": "TaskPilot",
+  "description": "Turn natural language into real browser actions.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08080b",
+  "theme_color": "#6d76f5",
+  "icons": [
+    { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512" }
+  ]
+}
