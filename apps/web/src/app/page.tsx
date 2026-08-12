@@ -355,7 +355,7 @@ export default function LandingPage() {
             <a href="/auth/signup" className="btn btn-primary btn-lg"><IconPlay size={15} /> Add to Chrome — free</a>
             <a href="#demo" className="btn btn-secondary btn-lg">See it in action <IconArrowRight size={15} /></a>
           </div>
-          <p className="lp-hero-note">No account needed to start · 30 free AI actions / month</p>
+          <p className="lp-hero-note">No credit card needed to start · 30 free AI actions / month</p>
 
           <Reveal className="lp-mock-wrap">
             <div className="lp-browser">

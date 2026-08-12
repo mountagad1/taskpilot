@@ -252,12 +252,12 @@ export const PLAN_FEATURES = {
   free: {
     name: "Free",
     price: 0,
-    ai_actions: 20,
-    exports: 3,
+    ai_actions: 30,
+    exports: 5,
     automations: 0,
     features: [
-      "20 AI actions/month",
-      "3 exports/month",
+      "30 AI actions/month",
+      "5 exports/month",
       "Smart Paste",
       "Basic extraction",
       "Community support",
@@ -266,8 +266,8 @@ export const PLAN_FEATURES = {
   },
   pro: {
     name: "Pro",
-    price_monthly: 19,
-    price_annual: 190,
+    price_monthly: 39.99,
+    price_annual: 383.9,
     ai_actions: -1, // unlimited
     exports: -1,
     automations: -1,

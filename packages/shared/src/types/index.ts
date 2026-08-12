@@ -360,9 +360,9 @@ export type SubscriptionStatus =
 export const PLAN_LIMITS: Record<PlanType, UserUsage> = {
   free: {
     ai_actions_used: 0,
-    ai_actions_limit: 20,
+    ai_actions_limit: 30,
     exports_used: 0,
-    exports_limit: 3,
+    exports_limit: 5,
     automations_used: 0,
     automations_limit: 0,
     period_start: "",
