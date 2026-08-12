@@ -396,5 +396,5 @@ so a `javascript:` payload can never reach a navigation.
 npm install @taskpilot/sdk
 ```
 
-See [`packages/sdk/README.md`](../packages/sdk/README.md) and
-[`examples/`](../examples).
+See [`packages/sdk/README.md`](../../packages/sdk/README.md) and
+[`examples/`](../../examples).

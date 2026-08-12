@@ -22,7 +22,7 @@ lifetime and refresh failures, and a view that exposes connections without
 their tokens.
 
 Supabase → **SQL Editor** → paste
-[`services/api/db/schema.sql`](../services/api/db/schema.sql) → **Run**.
+[`services/api/db/schema.sql`](../../services/api/db/schema.sql) → **Run**.
 That file is every migration concatenated in order, so it is also the
 correct choice for a fresh database.
 
