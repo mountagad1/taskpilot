@@ -45,6 +45,7 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null)
 
   const redirectTo = searchParams.get('redirect') || '/dashboard'
+  const justConfirmed = searchParams.get('confirmed') === '1'
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -87,6 +88,23 @@ function LoginForm() {
       <p style={{ fontSize: 14, color: 'var(--foreground-secondary)', marginBottom: 24 }}>
         Sign in to continue to TaskPilot.
       </p>
+
+      {justConfirmed && (
+        <p
+          role="status"
+          style={{
+            fontSize: 13,
+            color: '#6ee7a8',
+            background: 'rgba(34,197,94,0.1)',
+            border: '1px solid rgba(34,197,94,0.25)',
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 12px',
+            marginBottom: 20,
+          }}
+        >
+          Email confirmed. Sign in to continue.
+        </p>
+      )}
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>

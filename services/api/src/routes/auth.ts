@@ -90,10 +90,19 @@ authRoutes.post("/signup", guard({ auth: false, rateLimit: 10 }), async (c) => {
   const { email, password } = readCredentials(body, true);
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 120) : undefined;
 
+  // Send the confirmation link back to our own app. Without this Supabase
+  // falls back to the project's dashboard "Site URL", which the Vercel
+  // integration repoints whenever it links a project — confirmation mails
+  // then land on whatever it last configured instead of TaskPilot.
+  const appOrigin = (process.env.PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+
   const { data, error } = await getAdminClient().auth.signUp({
     email,
     password,
-    options: { data: name ? { full_name: name } : undefined },
+    options: {
+      data: name ? { full_name: name } : undefined,
+      emailRedirectTo: `${appOrigin}/auth/login?confirmed=1`,
+    },
   });
 
   if (error) throw badRequest(error.message);
