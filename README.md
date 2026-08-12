@@ -180,6 +180,7 @@ const agent = defineAgent({
 await new TaskPilot().publish(agent, { list: true })
 ```
 
+- Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - SDK reference: [`packages/sdk/README.md`](packages/sdk/README.md)
 - REST reference: [`docs/API.md`](docs/API.md)
 - Discovery document: `GET /v1`
