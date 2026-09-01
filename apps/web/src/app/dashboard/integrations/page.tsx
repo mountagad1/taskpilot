@@ -15,6 +15,7 @@
 // ============================================================
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 
 import { api, useApiList } from '@/lib/client/api'
 
@@ -232,9 +233,9 @@ export default function IntegrationsPage() {
             Upgrade to connect TaskPilot to your CRM, databases, and automation tools
           </p>
         </div>
-        <button className="btn btn-primary px-5 py-2 text-sm whitespace-nowrap">
+        <Link href="/pricing" className="btn btn-primary px-5 py-2 text-sm whitespace-nowrap">
           Upgrade to Pro →
-        </button>
+        </Link>
       </div>
 
       {/* Grid */}

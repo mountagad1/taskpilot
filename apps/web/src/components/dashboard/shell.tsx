@@ -131,7 +131,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
           )}
           {plan === 'free' && (
             <Link
-              href="/dashboard/settings"
+              href="/pricing"
               style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 8, fontSize: 13.5, fontWeight: 450, textDecoration: 'none', color: 'var(--foreground-secondary)' }}
               className="dash-nav-link"
             >
