@@ -10,12 +10,13 @@
 // ============================================================
 
 import { useState } from 'react'
-import Link from 'next/link'
 import { API_SCOPES, type ApiScope } from '@taskpilot/shared'
 
 import { api, useApiList, useMutation } from '@/lib/client/api'
 import { EmptyState, ErrorState, SkeletonList } from '@/components/states'
 import { IconPlug } from '@/components/ui/icons'
+import { TabBar } from '@/components/dashboard/tab-bar'
+import { DeveloperDocs } from './docs'
 
 interface KeyRow {
   id: string
@@ -42,55 +43,78 @@ const SCOPE_HELP: Record<ApiScope, string> = {
 
 const DEFAULT_SCOPES: ApiScope[] = ['agents:read', 'runs:read', 'runs:write']
 
+type DevTab = 'keys' | 'docs'
+
 export default function DevelopersPage() {
   const { items, loading, error, reload } = useApiList<KeyRow>('/v1/keys')
   const [created, setCreated] = useState<{ key: string; name: string } | null>(null)
+  const [tab, setTab] = useState<DevTab>('keys')
+
+  const activeKey = items.find((k) => !k.revoked_at)
 
   return (
-    <div style={{ padding: 28, maxWidth: 880 }}>
-      <header style={{ marginBottom: 22 }}>
+    <div style={{ padding: 28, maxWidth: 980 }}>
+      <header style={{ marginBottom: 18 }}>
         <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em' }}>Developers</h1>
         <p style={{ fontSize: 14, color: 'var(--foreground-secondary)', marginTop: 4 }}>
-          Build on TaskPilot with the{' '}
-          <code style={codeStyle}>@taskpilot/sdk</code> package or the REST API.{' '}
-          <Link href="/docs/api" style={{ color: 'var(--indigo-light)', textDecoration: 'none' }}>
-            Read the API reference →
-          </Link>
+          Build on TaskPilot with the <code style={codeStyle}>@taskpilot/sdk</code> package or the
+          REST API — create a key, then use it to publish and run your own agents.
         </p>
       </header>
 
-      {created && <NewKeyBanner secret={created.key} name={created.name} onDismiss={() => setCreated(null)} />}
-
-      <CreateKeyForm
-        onCreated={(key, name) => {
-          setCreated({ key, name })
-          reload()
-        }}
+      <TabBar
+        tabs={[
+          { id: 'keys', label: 'API keys' },
+          { id: 'docs', label: 'Documentation' },
+        ]}
+        active={tab}
+        onChange={(id) => setTab(id as DevTab)}
       />
 
-      <section style={{ marginTop: 28 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Your keys</h2>
+      {tab === 'keys' ? (
+        <>
+          {created && (
+            <NewKeyBanner secret={created.key} name={created.name} onDismiss={() => setCreated(null)} />
+          )}
 
-        {loading ? (
-          <SkeletonList rows={2} />
-        ) : error ? (
-          <ErrorState message={error} onRetry={reload} />
-        ) : items.length === 0 ? (
-          <EmptyState
-            icon={<IconPlug size={22} />}
-            title="No API keys yet"
-            description="Create one above to call the TaskPilot API from your own code."
+          <CreateKeyForm
+            onCreated={(key, name) => {
+              setCreated({ key, name })
+              reload()
+            }}
           />
-        ) : (
-          <div style={{ display: 'grid', gap: 10 }}>
-            {items.map((key) => (
-              <KeyCard key={key.id} apiKey={key} onChanged={reload} />
-            ))}
-          </div>
-        )}
-      </section>
 
-      <QuickStart />
+          <section style={{ marginTop: 28 }}>
+            <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Your keys</h2>
+
+            {loading ? (
+              <SkeletonList rows={2} />
+            ) : error ? (
+              <ErrorState message={error} onRetry={reload} />
+            ) : items.length === 0 ? (
+              <EmptyState
+                icon={<IconPlug size={22} />}
+                title="No API keys yet"
+                description="Create one above to call the TaskPilot API from your own code."
+              />
+            ) : (
+              <div style={{ display: 'grid', gap: 10 }}>
+                {items.map((key) => (
+                  <KeyCard key={key.id} apiKey={key} onChanged={reload} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <div style={{ marginTop: 8 }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setTab('docs')}>
+              See how to use a key with the SDK →
+            </button>
+          </div>
+        </>
+      ) : (
+        <DeveloperDocs keyPrefix={activeKey?.key_prefix} />
+      )}
     </div>
   )
 }
@@ -348,47 +372,6 @@ function Pill({ children, tone }: { children: React.ReactNode; tone: string }) {
     >
       {children}
     </span>
-  )
-}
-
-// ─── QUICK START ─────────────────────────────────────────────
-
-function QuickStart() {
-  return (
-    <section style={{ marginTop: 32 }}>
-      <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Quick start</h2>
-
-      <div className="ui-card" style={{ padding: 18 }}>
-        <pre
-          style={{
-            fontSize: 12,
-            lineHeight: 1.65,
-            overflowX: 'auto',
-            color: 'var(--foreground-secondary)',
-            fontFamily: 'var(--font-mono, monospace)',
-          }}
-        >
-{`npm install @taskpilot/sdk
-
-import { TaskPilot, defineAgent } from '@taskpilot/sdk'
-
-const taskpilot = new TaskPilot({ apiKey: process.env.TASKPILOT_API_KEY })
-
-const agent = defineAgent({
-  name: 'Email Harvester',
-  goal: 'Collect every email address on the page and export it as CSV',
-})
-  .workflow((s) => {
-    s.readPage('page')
-     .extractEmails('emails')
-     .export('emails', 'csv')
-     .finish('export')
-  })
-
-await taskpilot.publish(agent, { list: true })`}
-        </pre>
-      </div>
-    </section>
   )
 }
 

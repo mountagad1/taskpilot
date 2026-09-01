@@ -111,3 +111,15 @@ export const IconClipboard = (p: IconProps) => (
 export const IconLogo = (p: IconProps) => (
   <Base {...p}><path d="M12 2.5 14 9l6.5 2-6.5 2-2 6.5-2-6.5L3.5 11 10 9l2-6.5Z" fill="currentColor" stroke="none" /></Base>
 )
+export const IconBook = (p: IconProps) => (
+  <Base {...p}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" /></Base>
+)
+export const IconCode = (p: IconProps) => (
+  <Base {...p}><path d="m8 8-4 4 4 4" /><path d="m16 8 4 4-4 4" /></Base>
+)
+export const IconCopy = (p: IconProps) => (
+  <Base {...p}><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></Base>
+)
+export const IconTerminal = (p: IconProps) => (
+  <Base {...p}><path d="m4 6 5 5-5 5" /><path d="M12 16h8" /></Base>
+)
