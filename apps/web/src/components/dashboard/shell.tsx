@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { signOut } from '@/lib/client/auth'
 import { notifyExtensionSignedOut } from '@/lib/extension-bridge'
+import { PRICING_URL } from '@/lib/links'
 import NotificationBell from '@/components/dashboard/notifications'
 import { useAuth } from '@/components/dashboard/auth-context'
 import {
@@ -130,14 +131,14 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             </div>
           )}
           {plan === 'free' && (
-            <Link
-              href="/pricing"
+            <a
+              href={PRICING_URL}
               style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 8, fontSize: 13.5, fontWeight: 450, textDecoration: 'none', color: 'var(--foreground-secondary)' }}
               className="dash-nav-link"
             >
               <span style={{ display: 'flex', color: 'var(--warning)' }}><IconCrown size={17} /></span>
               Upgrade to Pro
-            </Link>
+            </a>
           )}
           <button
             onClick={handleSignOut}

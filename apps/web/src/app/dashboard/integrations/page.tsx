@@ -15,9 +15,9 @@
 // ============================================================
 
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
 
 import { api, useApiList } from '@/lib/client/api'
+import { PRICING_URL } from '@/lib/links'
 
 interface CatalogueEntry {
   /** Provider slug the API knows, or null when nothing is implemented yet. */
@@ -233,9 +233,9 @@ export default function IntegrationsPage() {
             Upgrade to connect TaskPilot to your CRM, databases, and automation tools
           </p>
         </div>
-        <Link href="/pricing" className="btn btn-primary px-5 py-2 text-sm whitespace-nowrap">
+        <a href={PRICING_URL} className="btn btn-primary px-5 py-2 text-sm whitespace-nowrap">
           Upgrade to Pro →
-        </Link>
+        </a>
       </div>
 
       {/* Grid */}
