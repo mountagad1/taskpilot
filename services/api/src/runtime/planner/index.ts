@@ -180,6 +180,11 @@ export class Planner {
   }
 
   private buildUserPrompt(request: PlanRequest): string {
+    // "custom_prompt" is the right strategy here even though it is the most
+    // permissive one: planning is what decides the task, so the narrower
+    // per-task strategies aren't known yet. What matters is that the
+    // optimized context — not the raw one — is what gets printed below, so
+    // its caps (3 tables, 50 rows, truncated selectors) actually apply.
     const ctx = this.optimizer.optimize(request.context, "custom_prompt");
 
     const parts = [
@@ -194,16 +199,18 @@ export class Planner {
       `  type: ${request.context.page_type}`,
     ];
 
-    if (request.context.detected_forms?.length) {
-      const fields = request.context.detected_forms
+    if (ctx.detected_forms?.length) {
+      const fields = ctx.detected_forms
         .slice(0, 25)
         .map((f) => `    - ${f.label || f.name || f.placeholder || f.element_selector} (${f.type})`)
         .join("\n");
-      parts.push(`  forms (${request.context.detected_forms.length} fields):`, fields);
+      parts.push(`  forms (${ctx.detected_forms.length} fields):`, fields);
     }
 
-    if (request.context.detected_tables?.length) {
-      const tables = request.context.detected_tables
+    if (ctx.detected_tables?.length) {
+      // Headers and a row count are enough to plan against; the rows
+      // themselves are read at execution time.
+      const tables = ctx.detected_tables
         .slice(0, 5)
         .map((t, i) => `    - table ${i}: ${t.row_count} rows [${t.headers.slice(0, 8).join(", ")}]`)
         .join("\n");

@@ -31,6 +31,7 @@ import {
 import { caller, guard, recordKeyUsage, resolveCaller, toErrorResponse } from "./middleware/kernel";
 import { ok } from "./lib/errors";
 import { hasSupabaseCredentials } from "./lib/clients";
+import { headroomStats } from "./runtime/providers";
 
 /** Origins allowed to call this API from a browser. */
 function isAllowedOrigin(origin: string): boolean {
@@ -116,6 +117,11 @@ export function createApp(): Hono {
       version: process.env.npm_package_version ?? "1.0.0",
       database: hasSupabaseCredentials() ? "configured" : "unconfigured",
       ai: process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY ? "configured" : "unconfigured",
+      // Compression fails open, so a dead proxy is otherwise invisible:
+      // these counters are how an operator sees it.
+      compression: process.env.HEADROOM_BASE_URL
+        ? { status: "configured", ...headroomStats() }
+        : { status: "unconfigured" },
       time: new Date().toISOString(),
     })
   );
