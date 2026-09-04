@@ -36,6 +36,19 @@ export interface LLMResponse {
   usage: LLMUsage;
   /** True when the response was served from the semantic cache. */
   cached?: boolean;
+  /** Set when the prompt passed through Headroom. See providers/headroom.ts. */
+  compression?: CompressionStats;
+}
+
+/** What context compression did to a single request. */
+export interface CompressionStats {
+  compressed: boolean;
+  tokens_before: number;
+  tokens_after: number;
+  tokens_saved: number;
+  transforms: string[];
+  duration_ms: number;
+  skipped_reason?: string;
 }
 
 export interface LLMProvider {

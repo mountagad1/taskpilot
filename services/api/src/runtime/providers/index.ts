@@ -4,6 +4,7 @@
 // ============================================================
 
 import { AnthropicProvider } from "./anthropic";
+import { HeadroomCompressor, headroomFromEnv, withHeadroom } from "./headroom";
 import { MockProvider } from "./mock";
 import { OpenAIProvider } from "./openai";
 import { LLMError, type LLMProvider, type LLMRequest, type LLMResponse } from "./types";
@@ -12,6 +13,15 @@ export * from "./types";
 export { OpenAIProvider } from "./openai";
 export { AnthropicProvider } from "./anthropic";
 export { MockProvider } from "./mock";
+export {
+  HeadroomCompressor,
+  headroomFromEnv,
+  headroomStats,
+  withHeadroom,
+  type CompressionOutcome,
+  type HeadroomOptions,
+  type HeadroomStats,
+} from "./headroom";
 
 export interface ProviderRouterOptions {
   openaiApiKey?: string;
@@ -19,6 +29,11 @@ export interface ProviderRouterOptions {
   /** Injected in tests; when present it handles every model. */
   override?: LLMProvider;
   fetchImpl?: typeof fetch;
+  /**
+   * Compresses prompts before they reach a provider. Omit it and prompts are
+   * sent verbatim — see providers/headroom.ts.
+   */
+  compressor?: HeadroomCompressor | null;
 }
 
 /**
@@ -27,25 +42,32 @@ export interface ProviderRouterOptions {
  * callers can detect this via `router.isLive`.
  */
 export class ProviderRouter {
-  private readonly providers: LLMProvider[] = [];
+  private readonly providers: LLMProvider[];
   private readonly fallback: MockProvider;
   readonly isLive: boolean;
 
   constructor(options: ProviderRouterOptions = {}) {
+    const resolved: LLMProvider[] = [];
     if (options.override) {
-      this.providers.push(options.override);
+      resolved.push(options.override);
     } else {
       if (options.openaiApiKey) {
-        this.providers.push(
+        resolved.push(
           new OpenAIProvider({ apiKey: options.openaiApiKey, fetchImpl: options.fetchImpl })
         );
       }
       if (options.anthropicApiKey) {
-        this.providers.push(
+        resolved.push(
           new AnthropicProvider({ apiKey: options.anthropicApiKey, fetchImpl: options.fetchImpl })
         );
       }
     }
+
+    // Wrapping happens once, at construction: `resolve()` stays a plain
+    // lookup and nothing on the request path has to know about compression.
+    const compressor = options.compressor;
+    this.providers = compressor ? resolved.map((p) => withHeadroom(p, compressor)) : resolved;
+
     this.isLive = this.providers.length > 0;
     this.fallback = new MockProvider({
       responder: () =>
@@ -74,5 +96,7 @@ export function providerRouterFromEnv(env: Record<string, string | undefined> = 
   return new ProviderRouter({
     openaiApiKey: env.OPENAI_API_KEY,
     anthropicApiKey: env.ANTHROPIC_API_KEY,
+    // null unless HEADROOM_BASE_URL points at a proxy.
+    compressor: headroomFromEnv(env),
   });
 }

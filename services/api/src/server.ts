@@ -42,6 +42,12 @@ const server = serve({ fetch: app.fetch, port }, (info) => {
   const on = status.filter(([, live]) => live).map(([name]) => name);
   if (on.length) console.log(`  live      ${on.join(", ")}`);
 
+  // Listed on its own line: unlike the subsystems above, compression being
+  // off costs tokens rather than disabling anything.
+  if (process.env.HEADROOM_BASE_URL) {
+    console.log(`  headroom  compressing prompts via ${process.env.HEADROOM_BASE_URL}`);
+  }
+
   const off = status.filter(([, live]) => !live).map(([name]) => name);
   if (off.length) {
     console.log(`  disabled  ${off.join(", ")}`);
