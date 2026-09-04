@@ -10,6 +10,7 @@ import { createAgentCheckout } from "../lib/marketplace";
 import { handleWebhookEvent } from "../lib/billing";
 import { processJobs } from "../lib/worker";
 import { getSemanticCache, providerRouterFromEnv } from "../runtime";
+import { budgetForTask, outputBudgetFor, prepareContent } from "../runtime/optimizer/token-optimizer";
 import { ApiError, badRequest, notConfigured, ok, validationFailed } from "../lib/errors";
 import { caller, guard, readJson, query } from "../middleware/kernel";
 import { toRows, toCSV, toJSON } from "@taskpilot/browser-tools/export";
@@ -241,7 +242,12 @@ aiRoutes.post("/process", guard({ rateLimit: 60 }), async (c) => {
   const pageContext = (body.pageContext ?? {}) as Record<string, unknown>;
   const options = (body.options ?? {}) as Record<string, unknown>;
 
-  const content = String(pageContext.content ?? "").slice(0, 8000);
+  // The extension captures up to 20k characters. What actually needs to
+  // reach a model depends entirely on the task, so each one gets its own
+  // input budget and its own output ceiling — see AI_TASK_BUDGETS.
+  const budget = budgetForTask(task);
+  const rawContent = String(pageContext.content ?? "");
+  const content = prepareContent(rawContent, budget);
   if (!content) throw badRequest("There is no page content to work with");
 
   const router = providerRouterFromEnv();
@@ -273,7 +279,7 @@ aiRoutes.post("/process", guard({ rateLimit: 60 }), async (c) => {
 
   const response = await router.complete({
     model,
-    max_tokens: 1500,
+    max_tokens: outputBudgetFor(budget, content.length),
     temperature: 0.2,
     json: task === "extract_data",
     messages: [

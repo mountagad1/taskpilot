@@ -215,6 +215,95 @@ const BOILERPLATE_PATTERNS = [
   /loading\.\.\./gi,
 ];
 
+export function stripBoilerplate(text: string): string {
+  let result = text;
+  for (const pattern of BOILERPLATE_PATTERNS) {
+    result = result.replace(pattern, "");
+  }
+  return result;
+}
+
+export function compressWhitespace(text: string): string {
+  return text
+    .replace(/\t/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ ]{2,}/g, " ")
+    .trim();
+}
+
+// ─── AI TASK BUDGETS ─────────────────────────────────────────
+//
+// The strategies above shape a PageContext for the planner. These budgets
+// cover the other, much hotter path: the AI actions the extension runs
+// through POST /v1/ai/process. Every one of them used to send up to 8,000
+// characters and allow 1,500 output tokens regardless of what it was doing
+// — a summary and a data extraction were charged the same.
+//
+// Output tokens are the expensive half (4-5x input per 1M on every model we
+// route to), so capping them per task saves more than trimming input does.
+//
+// `verbatim` marks the tasks where the model reproduces the content rather
+// than reasoning about it. Those get two exemptions:
+//   - no boilerplate stripping — a regex that deletes "Privacy Policy" from
+//     a page summary is fine; deleting it from the user's translation is
+//     data loss;
+//   - an output cap derived from the input, because a translation is about
+//     as long as its source. A fixed cap would truncate it mid-sentence.
+
+export interface AiTaskBudget {
+  /** Characters of content sent to the model. */
+  max_input_chars: number;
+  /** Output ceiling for tasks that summarise or analyse. */
+  max_output_tokens: number;
+  /** True when the model reproduces the content instead of digesting it. */
+  verbatim: boolean;
+}
+
+export const AI_TASK_BUDGETS: Record<string, AiTaskBudget> = {
+  // A summary is short by definition; 400 tokens is a long one.
+  summarize: { max_input_chars: 6_000, max_output_tokens: 400, verbatim: false },
+  // JSON of everything found on the page — the one task that earns headroom.
+  extract_data: { max_input_chars: 8_000, max_output_tokens: 900, verbatim: false },
+  // A reply answers a message, not a whole site.
+  generate_reply: { max_input_chars: 4_000, max_output_tokens: 600, verbatim: false },
+  // Open question over the page: the answer is prose, not a document.
+  custom: { max_input_chars: 6_000, max_output_tokens: 800, verbatim: false },
+  // Verbatim: output scales with input, nothing is stripped.
+  translate: { max_input_chars: 8_000, max_output_tokens: 0, verbatim: true },
+  rewrite: { max_input_chars: 8_000, max_output_tokens: 0, verbatim: true },
+};
+
+/** Falls back to the open-question budget for unknown task names. */
+export function budgetForTask(task: string): AiTaskBudget {
+  return AI_TASK_BUDGETS[task] ?? AI_TASK_BUDGETS.custom;
+}
+
+/**
+ * Trims content to a task's input budget. Non-verbatim tasks also get
+ * boilerplate stripped and whitespace collapsed first, so the truncation
+ * spends its characters on content rather than on cookie banners.
+ */
+export function prepareContent(content: string, budget: AiTaskBudget): string {
+  if (budget.verbatim) return content.slice(0, budget.max_input_chars);
+
+  const cleaned = compressWhitespace(stripBoilerplate(content));
+  return cleaned.slice(0, budget.max_input_chars);
+}
+
+/**
+ * Output ceiling for a request. Verbatim tasks scale with the input — at
+ * ~4 characters per token a translation needs roughly as many tokens as its
+ * source, plus room for languages that run longer than the original.
+ */
+export function outputBudgetFor(budget: AiTaskBudget, contentChars: number): number {
+  if (!budget.verbatim) return budget.max_output_tokens;
+
+  const scaled = Math.ceil((contentChars / 4) * 1.4);
+  // Never below a floor (short selections still need a usable answer) and
+  // never above what the old flat cap allowed.
+  return Math.min(2_000, Math.max(256, scaled));
+}
+
 // ─── OPTIMIZER CLASS ──────────────────────────────────────────
 
 export class TokenOptimizer {
@@ -280,19 +369,11 @@ export class TokenOptimizer {
   }
 
   private stripBoilerplate(text: string): string {
-    let result = text;
-    for (const pattern of BOILERPLATE_PATTERNS) {
-      result = result.replace(pattern, "");
-    }
-    return result;
+    return stripBoilerplate(text);
   }
 
   private compressWhitespace(text: string): string {
-    return text
-      .replace(/\t/g, " ")
-      .replace(/\n{3,}/g, "\n\n")
-      .replace(/[ ]{2,}/g, " ")
-      .trim();
+    return compressWhitespace(text);
   }
 
   // ── USAGE ANALYTICS ─────────────────────────────────────

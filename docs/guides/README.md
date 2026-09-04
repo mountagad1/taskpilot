@@ -6,6 +6,7 @@ Task-oriented walkthroughs. For how the system is built, see
 | Guide | Covers |
 |---|---|
 | [hubspot-setup](hubspot-setup.md) | Registering the HubSpot app and wiring OAuth |
+| [ai-token-budgets](ai-token-budgets.md) | Per-task input and output budgets for AI actions |
 | [headroom-compression](headroom-compression.md) | Running the Headroom proxy to cut prompt tokens |
 | [TaskPilot-Technical-UpdatedDocumentation.pdf](TaskPilot-Technical-UpdatedDocumentation.pdf) | **Current** — architecture 00–10 as a single document |
 | [TaskPilot-Technical-Documentation.pdf](TaskPilot-Technical-Documentation.pdf) | Superseded — predates the backend split |
