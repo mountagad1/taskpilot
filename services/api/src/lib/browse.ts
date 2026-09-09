@@ -56,9 +56,15 @@ export async function browseAgents<T = Record<string, unknown>>(
     query = query.or(`name.ilike.%${safe}%,tagline.ilike.%${safe}%,description.ilike.%${safe}%`);
   }
 
-  const maxPrice = Number(params.get("max_price"));
-  if (Number.isFinite(maxPrice) && maxPrice >= 0) {
-    query = query.lte("price_cents", Math.round(maxPrice));
+  // `Number(null)` is 0, not NaN — so reading this without checking for the
+  // parameter's presence first silently applied `price_cents <= 0` to every
+  // request and hid the entire paid catalogue.
+  const maxPriceParam = params.get("max_price");
+  if (maxPriceParam !== null && maxPriceParam.trim() !== "") {
+    const maxPrice = Number(maxPriceParam);
+    if (Number.isFinite(maxPrice) && maxPrice >= 0) {
+      query = query.lte("price_cents", Math.round(maxPrice));
+    }
   }
 
   if (params.get("free") === "true") query = query.eq("price_cents", 0);

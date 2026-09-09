@@ -122,3 +122,45 @@ describe('browseAgents', () => {
     expect(result.meta).toEqual({ total: 1, page: 2, per_page: 12 })
   })
 })
+
+// ─── PRICE FILTER REGRESSION ─────────────────────────────────
+
+describe('max_price is only applied when actually supplied', () => {
+  it('does not filter by price when the parameter is absent', async () => {
+    // `Number(null)` is 0, so the original guard applied
+    // `price_cents <= 0` to every request and hid the entire paid
+    // catalogue. Caught against a real database, not by this suite.
+    const { db, calls } = fakeDb()
+    await browseAgents(db, request())
+
+    expect(findCall(calls, 'lte', 'price_cents')).toBeUndefined()
+  })
+
+  it('does not filter by price when the parameter is empty', async () => {
+    const { db, calls } = fakeDb()
+    await browseAgents(db, request('?max_price='))
+
+    expect(findCall(calls, 'lte', 'price_cents')).toBeUndefined()
+  })
+
+  it('applies the filter when a value is given', async () => {
+    const { db, calls } = fakeDb()
+    await browseAgents(db, request('?max_price=1500'))
+
+    expect(findCall(calls, 'lte', 'price_cents')?.args[1]).toBe(1500)
+  })
+
+  it('ignores a non-numeric value rather than filtering to zero', async () => {
+    const { db, calls } = fakeDb()
+    await browseAgents(db, request('?max_price=free'))
+
+    expect(findCall(calls, 'lte', 'price_cents')).toBeUndefined()
+  })
+
+  it('still supports free=true explicitly', async () => {
+    const { db, calls } = fakeDb()
+    await browseAgents(db, request('?free=true'))
+
+    expect(findCall(calls, 'eq', 'price_cents')?.args[1]).toBe(0)
+  })
+})
