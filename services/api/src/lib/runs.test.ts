@@ -68,3 +68,50 @@ describe('sanitisePageContext', () => {
     expect(context.meta_description).toBeUndefined()
   })
 })
+
+// ─── PLAN LIMIT MUST FAIL CLOSED ─────────────────────────────
+
+import { vi } from 'vitest'
+import { assertWithinPlanLimits } from './runs'
+import type { Caller } from '../middleware/kernel'
+
+/** Builds a caller whose count query returns whatever the test dictates. */
+function callerWithCount(result: { count?: number | null; error?: { message: string } | null }) {
+  const builder: Record<string, unknown> = {}
+  for (const method of ['select', 'eq', 'gte']) {
+    builder[method] = vi.fn(() => builder)
+  }
+  builder.then = (resolve: (v: unknown) => unknown) =>
+    resolve({ count: result.count ?? null, error: result.error ?? null })
+
+  return {
+    db: { from: vi.fn(() => builder) },
+    from: vi.fn(() => builder),
+  }
+}
+
+describe('assertWithinPlanLimits', () => {
+  const freeCaller = { userId: 'u1', plan: 'free' } as unknown as Caller
+
+  it('does nothing for an unlimited plan without querying at all', async () => {
+    // Pro is -1 (unlimited); it must short-circuit before touching the
+    // database, so a database problem cannot block a paying customer.
+    const pro = { userId: 'u1', plan: 'pro' } as unknown as Caller
+    await expect(assertWithinPlanLimits(pro)).resolves.toBeUndefined()
+  })
+
+  it('refuses rather than allowing when the count cannot be read', async () => {
+    // The bug: `const { count } = ...` discarded the error, `count` was
+    // null, `?? 0` made it zero, and the limit check passed — granting
+    // unlimited runs on a limited plan whenever that query failed.
+    vi.resetModules()
+    vi.doMock('./clients', () => ({
+      getAdminClient: () => callerWithCount({ error: { message: 'connection reset' } }),
+      hasSupabaseCredentials: () => true,
+    }))
+
+    const { assertWithinPlanLimits: guarded } = await import('./runs')
+    await expect(guarded(freeCaller)).rejects.toThrow(/could not verify/i)
+    vi.doUnmock('./clients')
+  })
+})

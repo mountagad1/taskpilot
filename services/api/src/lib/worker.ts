@@ -237,10 +237,42 @@ export async function enqueueDueWorkflows(db: SupabaseClient): Promise<number> {
 
 // ─── DRAIN ───────────────────────────────────────────────────
 
-export async function processJobs(options: { workerId?: string; batchSize?: number } = {}): Promise<WorkerResult> {
+/** How many jobs one invocation may claim when the caller says nothing. */
+export const DEFAULT_BATCH_SIZE = 10;
+
+/** Upper bound, so a single tick cannot monopolise the queue. */
+export const MAX_BATCH_SIZE = 50;
+
+/**
+ * Clamps a caller-supplied batch size into a usable range.
+ *
+ * Exported because the arithmetic is the whole point: `??` does not catch
+ * NaN, and neither Math.max nor Math.min clamps it — NaN propagates through
+ * both. It then serialises to JSON null, and `LIMIT NULL` in Postgres means
+ * NO limit, so one malformed `?batch=` would claim the entire queue into a
+ * single worker instead of the intended handful.
+ */
+export function resolveBatchSize(value: unknown): number {
+  if (value === null || value === undefined) return DEFAULT_BATCH_SIZE;
+
+  // Normalise through a trimmed string before coercing. Number() reads "",
+  // " " and [] as 0 rather than NaN, so a blank `?batch=` would otherwise
+  // clamp to 1 and quietly process a tenth of the intended batch.
+  const text = String(value).trim();
+  if (text === "") return DEFAULT_BATCH_SIZE;
+
+  const requested = Number(text);
+  if (!Number.isFinite(requested)) return DEFAULT_BATCH_SIZE;
+
+  return Math.min(Math.max(Math.trunc(requested), 1), MAX_BATCH_SIZE);
+}
+
+export async function processJobs(
+  options: { workerId?: string; batchSize?: unknown } = {}
+): Promise<WorkerResult> {
   const db = getAdminClient();
   const workerId = options.workerId ?? `worker-${Math.random().toString(36).slice(2, 8)}`;
-  const batchSize = Math.min(Math.max(options.batchSize ?? 10, 1), 50);
+  const batchSize = resolveBatchSize(options.batchSize);
 
   const { data: requeued } = await db.rpc("requeue_stalled_jobs", { stall_minutes: 15 });
   await enqueueDueWorkflows(db);

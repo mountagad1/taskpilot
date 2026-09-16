@@ -199,11 +199,15 @@ keyRoutes.post("/", guard({ allow: ["session"], rateLimit: 20 }), async (c) => {
   const allowance = KEY_ALLOWANCE[me.plan] ?? 0;
   if (allowance === 0) throw planLimit("API keys are available on the Pro plan and above.");
 
-  const { count } = await me.db
+  const { count, error: countError } = await me.db
     .from("api_keys")
     .select("id", { count: "exact", head: true })
     .eq("user_id", me.userId)
     .is("revoked_at", null);
+
+  // Fail closed: a discarded error here read as zero existing keys and let
+  // the allowance be exceeded without limit.
+  if (countError) throw badRequest(`Could not count your existing keys: ${countError.message}`);
 
   if ((count ?? 0) >= allowance) {
     throw planLimit(`Your plan allows ${allowance} active API keys. Revoke one to create another.`);
@@ -458,12 +462,17 @@ teamRoutes.post("/:id/invites", guard({ rateLimit: 30 }), async (c) => {
 
   // Refuse early when the team is already full, so the invite does not fail
   // confusingly at accept time.
-  const [{ data: team }, { count: used }] = await Promise.all([
+  const [{ data: team }, { count: used, error: seatError }] = await Promise.all([
     admin.from("teams").select("seats, name").eq("id", teamId).maybeSingle(),
     admin.from("team_members").select("id", { count: "exact", head: true }).eq("team_id", teamId),
   ]);
 
   if (!team) throw notFound("Team not found");
+
+  // The enforce_team_seats trigger is the real guard, so a miscount here
+  // only produces a confusing failure at accept time rather than an
+  // overfilled team. Still worth refusing rather than guessing zero.
+  if (seatError) throw badRequest(`Could not check the team's seat usage: ${seatError.message}`);
   if ((used ?? 0) >= team.seats) {
     throw conflict(`This team has no seats left (${team.seats}). Remove a member or upgrade.`);
   }

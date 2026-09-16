@@ -24,7 +24,7 @@ import {
 import { Planner, providerRouterFromEnv } from "../runtime";
 
 import { getAdminClient } from "./clients";
-import { badRequest, forbidden, notFound, planLimit, validationFailed } from "./errors";
+import { ApiError, badRequest, forbidden, notFound, planLimit, validationFailed } from "./errors";
 import type { Caller } from "../middleware/kernel";
 import { asRow, type RunRow } from "./rows";
 
@@ -85,11 +85,23 @@ export async function assertWithinPlanLimits(caller: Caller): Promise<void> {
   periodStart.setUTCDate(1);
   periodStart.setUTCHours(0, 0, 0, 0);
 
-  const { count } = await getAdminClient()
+  const { count, error } = await getAdminClient()
     .from("agent_runs")
     .select("id", { count: "exact", head: true })
     .eq("user_id", caller.userId)
     .gte("started_at", periodStart.toISOString());
+
+  // Fail closed. Discarding this error meant `count` was null, `?? 0` made
+  // it zero, and the comparison below passed — so any hiccup in the count
+  // silently granted unlimited runs on a plan that has a limit. Refusing is
+  // safe here: the run itself needs the same database, so it could not have
+  // succeeded anyway.
+  if (error) {
+    throw new ApiError(
+      "internal_error",
+      `Could not verify your remaining run quota: ${error.message}`
+    );
+  }
 
   if ((count ?? 0) >= limit) {
     throw planLimit(

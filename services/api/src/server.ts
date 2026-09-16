@@ -12,7 +12,22 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app";
 import { hasSupabaseCredentials, hasStripeCredentials } from "./lib/clients";
 
-const port = Number(process.env.PORT ?? 4000);
+// An empty PORT is not null, so `??` does not fire and Number("") is 0 —
+// which tells Node to bind an arbitrary free port. The service then starts
+// "successfully" somewhere unpredictable and the platform health check
+// fails with nothing to explain it. Fall back loudly instead.
+const port = resolvePort();
+
+function resolvePort(): number {
+  const raw = process.env.PORT?.trim();
+  if (!raw) return 4000;
+
+  const parsed = Number(raw);
+  if (Number.isInteger(parsed) && parsed > 0 && parsed < 65536) return parsed;
+
+  console.warn(`[server] PORT="${raw}" is not a usable port number; falling back to 4000`);
+  return 4000;
+}
 const app = createApp();
 
 const server = serve({ fetch: app.fetch, port }, (info) => {

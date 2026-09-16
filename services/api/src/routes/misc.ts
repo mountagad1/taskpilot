@@ -447,8 +447,9 @@ workerRoutes.all("/", async (c) => {
 
   if (!hasSupabaseCredentials()) throw notConfigured("No database is configured");
 
-  const batchSize = Number(query(c, "batch") ?? 10);
-  return ok(await processJobs({ batchSize }));
+  // Normalisation lives in resolveBatchSize, so the route does not have to
+  // re-derive what counts as a usable value.
+  return ok(await processJobs({ batchSize: query(c, "batch") }));
 });
 
 /** Constant-time comparison so the secret cannot be recovered by timing. */
