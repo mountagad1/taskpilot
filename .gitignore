@@ -12,3 +12,6 @@ coverage
 *.zip
 services/api/.env
 apps/web/.env.local
+
+# Local Netlify folder
+.netlify
