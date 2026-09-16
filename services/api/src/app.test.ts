@@ -239,3 +239,46 @@ describe('request parsing', () => {
     delete process.env.WORKER_SECRET
   })
 })
+
+// ─── HEALTH: DEPLOY DIAGNOSTICS ──────────────────────────────
+
+describe('health reports every subsystem', () => {
+  it('breaks configuration out per subsystem', async () => {
+    const payload = await body<{ configured: Record<string, boolean> }>(await call('/health'))
+
+    // The startup banner already lists these; the endpoint is what a
+    // deployed container can actually be asked.
+    expect(Object.keys(payload.configured).sort()).toEqual(
+      ['ai', 'billing', 'database', 'integrations', 'redis', 'worker'].sort()
+    )
+  })
+
+  it('keeps the original top-level fields', async () => {
+    // Railway's healthcheck and the existing tests read these directly, so
+    // the shape must not change underneath them.
+    const payload = await body<{ status: string; database: string; ai: string }>(await call('/health'))
+
+    expect(payload.status).toBe('ok')
+    expect(payload.database).toBe('unconfigured')
+    expect(payload.ai).toBe('unconfigured')
+  })
+
+  it('answers 200 even with nothing configured', async () => {
+    // Returning non-200 here would make a container platform restart the
+    // service forever, when running with features switched off is the
+    // documented and intended behaviour.
+    expect((await call('/health')).status).toBe(200)
+  })
+
+  it('skips the probe when no database is configured', async () => {
+    // Probing without credentials would throw not_configured and turn the
+    // health check into a 503.
+    const response = await call('/health?probe=1')
+    expect(response.status).toBe(200)
+    expect(await body<{ probe?: unknown }>(response)).not.toHaveProperty('probe')
+  })
+
+  it('does not probe unless asked', async () => {
+    expect(await body<{ probe?: unknown }>(await call('/health'))).not.toHaveProperty('probe')
+  })
+})

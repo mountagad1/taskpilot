@@ -30,7 +30,9 @@ import {
 } from "./routes/misc";
 import { caller, guard, recordKeyUsage, resolveCaller, toErrorResponse } from "./middleware/kernel";
 import { ok } from "./lib/errors";
-import { hasSupabaseCredentials } from "./lib/clients";
+import { getAdminClient, hasSupabaseCredentials, hasStripeCredentials } from "./lib/clients";
+import { hasEncryptionKey } from "./lib/crypto";
+import { hasHubSpotCredentials } from "./lib/oauth/hubspot";
 
 /** Origins allowed to call this API from a browser. */
 function isAllowedOrigin(origin: string): boolean {
@@ -109,16 +111,42 @@ export function createApp(): Hono {
   });
 
   // ── Health ──
-  app.get("/health", (c) =>
-    c.json({
+  // This is the container platform's health check, so it reports process
+  // liveness and always answers 200. A subsystem being unconfigured is not
+  // a reason to restart the container — the service is designed to run with
+  // features switched off, and failing here would loop a deploy forever.
+  //
+  // `?probe=1` additionally *contacts* the database. The cheap fields only
+  // say whether environment variables are present, which is exactly the
+  // blind spot on a fresh deploy: a wrong SUPABASE_URL still reports
+  // "configured" and the first real failure is a user-facing 500.
+  app.get("/health", async (c) => {
+    const configured = {
+      database: hasSupabaseCredentials(),
+      ai: Boolean(process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY),
+      billing: hasStripeCredentials(),
+      redis: Boolean(process.env.UPSTASH_REDIS_REST_URL),
+      worker: Boolean(process.env.WORKER_SECRET),
+      integrations: hasHubSpotCredentials() && hasEncryptionKey(),
+    };
+
+    const body: Record<string, unknown> = {
       status: "ok",
       service: "taskpilot-api",
       version: process.env.npm_package_version ?? "1.0.0",
-      database: hasSupabaseCredentials() ? "configured" : "unconfigured",
-      ai: process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY ? "configured" : "unconfigured",
+      // Kept for compatibility: existing checks read these two directly.
+      database: configured.database ? "configured" : "unconfigured",
+      ai: configured.ai ? "configured" : "unconfigured",
+      configured,
       time: new Date().toISOString(),
-    })
-  );
+    };
+
+    if (new URL(c.req.url).searchParams.get("probe") === "1" && configured.database) {
+      body.probe = await probeDatabase();
+    }
+
+    return c.json(body);
+  });
 
   // ── Discovery ──
   app.get("/v1", (c) =>
@@ -239,3 +267,46 @@ function v1Me(app: Hono): void {
 
 export type App = ReturnType<typeof createApp>;
 export { resolveCaller };
+
+/**
+ * Round-trips one cheap query to confirm the database is actually reachable
+ * and that the schema has been applied. Deployments have twice now been
+ * "configured" while the migrations had never been run, which surfaces only
+ * as a confusing 400 about a missing table on the first real request.
+ */
+async function probeDatabase(): Promise<Record<string, unknown>> {
+  const startedAt = Date.now();
+  try {
+    const admin = getAdminClient();
+
+    // `profiles` comes from 001 and `oauth_states` from 007, so the pair
+    // distinguishes "no schema at all" from "schema is behind".
+    //
+    // Deliberately NOT `{ head: true }`. PostgREST reports a missing table
+    // in the response *body*, and `head` suppresses the body — a query for
+    // a table that does not exist comes back 204 with `error: null`, so the
+    // probe cheerfully reports the schema as current. Verified against the
+    // live database: head+count returned 204/no-error for a table that was
+    // genuinely absent, while a plain select returned 404 with the message.
+    const [core, oauth] = await Promise.all([
+      admin.from("profiles").select("id").limit(1),
+      admin.from("oauth_states").select("state").limit(1),
+    ]);
+
+    if (core.error) {
+      return { reachable: false, error: core.error.message, latency_ms: Date.now() - startedAt };
+    }
+
+    return {
+      reachable: true,
+      latency_ms: Date.now() - startedAt,
+      schema: oauth.error ? "behind: 007_oauth.sql not applied" : "current",
+    };
+  } catch (error) {
+    return {
+      reachable: false,
+      error: error instanceof Error ? error.message : "unknown error",
+      latency_ms: Date.now() - startedAt,
+    };
+  }
+}
