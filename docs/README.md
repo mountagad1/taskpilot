@@ -22,6 +22,7 @@ Read in order for a full picture; each stands alone for reference.
 | [08_SECURITY_MODEL](architecture/08_SECURITY_MODEL.md) | Trust boundaries, RLS, secrets, CORS |
 | [09_DEPLOYMENT](architecture/09_DEPLOYMENT.md) | Hosts, environments, build-time constraints |
 | [10_PERFORMANCE](architecture/10_PERFORMANCE.md) | Caching, token budgeting, limits |
+| [11_BILLING_ARCHITECTURE](architecture/11_BILLING_ARCHITECTURE.md) | Plans, entitlements, usage, Stripe — audited against the code, not assumed |
 
 ## Domains
 

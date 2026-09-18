@@ -1,12 +1,18 @@
 # Domain · Billing
 
-Plans, quotas and Stripe.
+Plans, quotas and Stripe. **Full audit and target design:**
+[11_BILLING_ARCHITECTURE](../../architecture/11_BILLING_ARCHITECTURE.md) —
+read that before changing anything here, it corrects claims this page used
+to make.
 
 **Owns** `services/api/src/lib/billing.ts`
 
-| Surface | Route |
-|---|---|
-| Checkout, portal, webhook | `/v1/billing` (`routes/misc.ts`) |
+| Surface | Route | Status |
+|---|---|---|
+| Marketplace agent purchase | `POST /v1/billing/checkout` (`routes/misc.ts`) | Live |
+| Stripe webhook | `POST /v1/billing/webhook` | Live, not idempotent yet |
+| Subscription checkout | — | **Missing.** `createCheckoutSession()` exists in `billing.ts` but no route calls it — there is currently no way to buy Pro. |
+| Billing portal | — | **Missing.** `createPortalSession()` exists, unused. |
 
 ## Plans
 
@@ -27,8 +33,15 @@ presentation copy; it must be kept in step but nothing enforces from it.
 
 ## Quota accounting
 
-`lib/runs.ts` counts `agent_runs` since the start of the calendar month (UTC).
-The check runs **before** planning, so an over-limit request costs nothing.
+`lib/runs.ts` counts `agent_runs` since the start of the calendar month (UTC)
+to enforce the AI-action limit, before planning, so an over-limit request
+costs nothing. It is a count-then-insert check, not atomic — see
+[11_BILLING_ARCHITECTURE §1.5](../../architecture/11_BILLING_ARCHITECTURE.md#15-usage-race-condition)
+for the race this leaves open.
+
+**The advertised export limit is not enforced.** `exportRoutes.post("/")`
+never checks `exports_limit` — a Free-tier account can generate unlimited
+exports today.
 
 ## Stripe
 
