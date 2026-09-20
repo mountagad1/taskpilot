@@ -308,7 +308,7 @@ function WorkflowBuilder({ onSaved }: { onSaved: () => void }) {
         void save.run(undefined)
       }}
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 13 }}>
         <label>
           <div style={labelStyle}>Workflow name</div>
           <input

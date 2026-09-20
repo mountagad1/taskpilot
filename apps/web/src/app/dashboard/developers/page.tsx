@@ -213,7 +213,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: string, name: string) =
         void create.run(undefined)
       }}
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
         <label>
           <div style={labelStyle}>Key name</div>
           <input

@@ -271,50 +271,98 @@ export default function BrowserActionsPage() {
               description="Once you run an action from the extension, each execution — with its status, duration, and output — will show up here."
             />
           ) : (
-            <div className="glass rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    {['Action', 'Trigger', 'Runs', 'Last run', 'Status'].map((h) => (
-                      <th
-                        key={h}
-                        className="px-5 py-3 text-left text-xs font-heading font-semibold"
-                        style={{ color: 'var(--foreground-tertiary)' }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {ranActions.map((a, i) => (
-                    <tr
-                      key={a.id}
-                      style={{
-                        borderBottom:
-                          i < ranActions.length - 1
-                            ? '1px solid var(--border-subtle)'
-                            : 'none',
-                      }}
-                    >
-                      <td className="px-5 py-3 font-heading font-semibold text-foreground">{a.name}</td>
-                      <td className="px-5 py-3 font-mono" style={{ color: 'var(--foreground-tertiary)' }}>
-                        {a.trigger}
-                      </td>
-                      <td className="px-5 py-3 font-mono text-foreground">{a.runs}</td>
-                      <td className="px-5 py-3 font-mono" style={{ color: 'var(--foreground-secondary)' }}>
-                        {relativeTime(a.last_run_at)}
-                      </td>
-                      <td className="px-5 py-3">
-                        <span style={{ color: a.status === 'active' ? '#10b981' : 'var(--foreground-tertiary)' }}>
-                          {a.status}
-                        </span>
-                      </td>
+            <>
+              {/* >=640px: the table. A 5-column table has no honest way to
+                  fit a narrow phone — overflow-x here would mean scrolling
+                  sideways to read "Status" on every single row, so below
+                  the breakpoint this becomes stacked key/value cards
+                  instead, not a squeezed or clipped copy of the same table. */}
+              <div className="glass rounded-xl overflow-hidden actions-table-wrap">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                      {['Action', 'Trigger', 'Runs', 'Last run', 'Status'].map((h) => (
+                        <th
+                          key={h}
+                          className="px-5 py-3 text-left text-xs font-heading font-semibold"
+                          style={{ color: 'var(--foreground-tertiary)' }}
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {ranActions.map((a, i) => (
+                      <tr
+                        key={a.id}
+                        style={{
+                          borderBottom:
+                            i < ranActions.length - 1
+                              ? '1px solid var(--border-subtle)'
+                              : 'none',
+                        }}
+                      >
+                        <td className="px-5 py-3 font-heading font-semibold text-foreground">{a.name}</td>
+                        <td className="px-5 py-3 font-mono" style={{ color: 'var(--foreground-tertiary)' }}>
+                          {a.trigger}
+                        </td>
+                        <td className="px-5 py-3 font-mono text-foreground">{a.runs}</td>
+                        <td className="px-5 py-3 font-mono" style={{ color: 'var(--foreground-secondary)' }}>
+                          {relativeTime(a.last_run_at)}
+                        </td>
+                        <td className="px-5 py-3">
+                          <span style={{ color: a.status === 'active' ? '#10b981' : 'var(--foreground-tertiary)' }}>
+                            {a.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* <640px: same data, one card per action. */}
+              <div className="actions-card-list" style={{ display: 'none', flexDirection: 'column', gap: 10 }}>
+                {ranActions.map((a) => (
+                  <div key={a.id} className="glass rounded-xl" style={{ padding: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                      <span className="font-heading font-semibold text-foreground" style={{ fontSize: 14 }}>{a.name}</span>
+                      <span
+                        style={{
+                          flexShrink: 0,
+                          fontSize: 12,
+                          color: a.status === 'active' ? '#10b981' : 'var(--foreground-tertiary)',
+                        }}
+                      >
+                        {a.status}
+                      </span>
+                    </div>
+                    <dl style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 10, fontSize: 12.5 }}>
+                      <div>
+                        <dt style={{ color: 'var(--foreground-muted)' }}>Trigger</dt>
+                        <dd className="font-mono" style={{ color: 'var(--foreground-tertiary)', margin: 0 }}>{a.trigger}</dd>
+                      </div>
+                      <div>
+                        <dt style={{ color: 'var(--foreground-muted)' }}>Runs</dt>
+                        <dd className="font-mono text-foreground" style={{ margin: 0 }}>{a.runs}</dd>
+                      </div>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <dt style={{ color: 'var(--foreground-muted)' }}>Last run</dt>
+                        <dd className="font-mono" style={{ color: 'var(--foreground-secondary)', margin: 0 }}>{relativeTime(a.last_run_at)}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                ))}
+              </div>
+
+              <style>{`
+                @media (max-width: 639px) {
+                  .actions-table-wrap { display: none; }
+                  .actions-card-list { display: flex !important; }
+                }
+              `}</style>
+            </>
           )}
         </>
       )}

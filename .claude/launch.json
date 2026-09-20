@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "web",
+      "name": "webdev",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@taskpilot/web", "dev", "--", "-p", "3100"],
-      "port": 3100
+      "runtimeArgs": ["--filter", "@taskpilot/web", "exec", "next", "dev", "-p", "3101"],
+      "port": 3101
     }
   ]
 }

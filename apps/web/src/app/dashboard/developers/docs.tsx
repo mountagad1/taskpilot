@@ -72,29 +72,14 @@ const NAV = [
 
 export function DeveloperDocs({ keyPrefix }: { keyPrefix?: string }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 32, alignItems: 'start' }}>
-      <nav
-        style={{
-          position: 'sticky',
-          top: 20,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2,
-        }}
-        className="docs-side-nav"
-      >
+    <div className="docs-layout">
+      {/* A fixed side column has no room on a phone. Below the breakpoint
+          this becomes a horizontal scroll strip pinned above the content
+          instead of a column beside it — a real layout change, not a
+          shrunk copy of the desktop one. */}
+      <nav className="docs-side-nav">
         {NAV.map((item) => (
-          <a
-            key={item.id}
-            href={`#${item.id}`}
-            style={{
-              fontSize: 12.5,
-              padding: '6px 10px',
-              borderRadius: 7,
-              color: 'var(--foreground-tertiary)',
-              textDecoration: 'none',
-            }}
-          >
+          <a key={item.id} href={`#${item.id}`} className="docs-nav-link">
             {item.label}
           </a>
         ))}
@@ -102,16 +87,7 @@ export function DeveloperDocs({ keyPrefix }: { keyPrefix?: string }) {
           href="https://github.com/mountagad1/taskpilot/blob/main/docs/api/README.md"
           target="_blank"
           rel="noreferrer"
-          style={{
-            fontSize: 12,
-            padding: '6px 10px',
-            marginTop: 8,
-            color: 'var(--indigo-light)',
-            textDecoration: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
+          className="docs-nav-link docs-nav-link-external"
         >
           <IconBook size={13} /> Full docs
         </a>
@@ -126,6 +102,28 @@ export function DeveloperDocs({ keyPrefix }: { keyPrefix?: string }) {
         <Errors />
         <FullReference />
       </div>
+
+      <style>{`
+        .docs-layout { display: flex; flex-direction: column; gap: 20px; }
+        .docs-side-nav {
+          display: flex; flex-direction: row; gap: 4px; align-items: center;
+          overflow-x: auto; padding-bottom: 4px;
+        }
+        .docs-nav-link {
+          font-size: 12.5px; padding: 6px 10px; border-radius: 7px;
+          color: var(--foreground-tertiary); text-decoration: none;
+          white-space: nowrap; flex-shrink: 0;
+        }
+        .docs-nav-link-external {
+          color: var(--indigo-light); display: flex; align-items: center; gap: 6px;
+          border-left: 1px solid var(--border-subtle); margin-left: 4px; padding-left: 12px;
+        }
+        @media (min-width: 700px) {
+          .docs-layout { display: grid; grid-template-columns: 160px 1fr; gap: 32px; align-items: start; }
+          .docs-side-nav { position: sticky; top: 20px; flex-direction: column; overflow: visible; }
+          .docs-nav-link-external { border-left: none; margin-left: 0; padding-left: 10px; margin-top: 8px; }
+        }
+      `}</style>
     </div>
   )
 }

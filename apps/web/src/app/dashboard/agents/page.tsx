@@ -358,7 +358,7 @@ function AgentForm({ onCreated }: { onCreated: () => void }) {
         />
       </Field>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 14 }}>
         <Field label="Category">
           <select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value as AgentCategory)}>
             {AGENT_CATEGORIES.map((c) => (
