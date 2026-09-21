@@ -93,14 +93,6 @@ const css = `
 .lp-sb-input { padding: 9px 11px; border-top: 1px solid var(--border-subtle); display: flex; gap: 6px; align-items: center; }
 .lp-sb-input input { flex: 1; height: 26px; padding: 0 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border-subtle); color: var(--foreground); font-size: 11px; font-family: var(--font-body); outline: none; }
 
-/* ── Stats ── */
-.lp-stats { border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); background: var(--background-secondary); }
-.lp-stats-inner { display: flex; flex-wrap: wrap; justify-content: center; }
-.lp-stat { flex: 1; min-width: 190px; padding: 26px 16px; text-align: center; border-right: 1px solid var(--border-subtle); }
-.lp-stat:last-child { border-right: none; }
-.lp-stat-n { font-size: clamp(22px, 2.2vw, 28px); font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
-.lp-stat-l { margin-top: 4px; font-size: 13px; color: var(--foreground-tertiary); }
-
 /* ── How / grid ── */
 .lp-how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 48px; }
 .lp-how-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
@@ -216,8 +208,6 @@ const css = `
   .lp-feat { grid-template-columns: 1fr; }
   .lp-feat-lg, .lp-feat-wide { grid-column: span 1; }
   .lp-form-grid { grid-template-columns: 1fr; }
-  .lp-stat { border-right: none; border-bottom: 1px solid var(--border-subtle); }
-  .lp-stat:last-child { border-bottom: none; }
   .lp-footer-grid { grid-template-columns: 1fr; }
   .lp-nav-cta .btn:first-child { display: none; }
 }
@@ -246,14 +236,6 @@ const DEMO_FIELDS = [
   { label: 'Company', val: 'Vercel' },
   { label: 'Email', val: 'sarah.chen@vercel.com' },
   { label: 'Phone', val: '+1 (415) 820-3341' },
-]
-
-const STATS = [
-  { n: '14,200+', l: 'Active users' },
-  { n: '4.8M', l: 'AI actions taken' },
-  { n: '94k+', l: 'Hours saved' },
-  { n: '60%', l: 'Token cost savings' },
-  { n: '4.9 / 5', l: 'Chrome Store rating' },
 ]
 
 const INTEGRATIONS = ['HubSpot', 'Salesforce', 'LinkedIn', 'Gmail', 'Notion', 'Airtable', 'Slack', 'Google Sheets', 'Pipedrive', 'Outlook', 'Shopify', 'Zapier']
@@ -399,20 +381,6 @@ export default function LandingPage() {
           </Reveal>
         </div>
       </header>
-
-      {/* STATS */}
-      <div className="lp-stats">
-        <div className="ui-container" style={{ paddingInline: 0 }}>
-          <div className="lp-stats-inner">
-            {STATS.map((s) => (
-              <div className="lp-stat" key={s.l}>
-                <div className="lp-stat-n">{s.n}</div>
-                <div className="lp-stat-l">{s.l}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
 
       {/* HOW IT WORKS */}
       <section id="how" className="ui-section">
