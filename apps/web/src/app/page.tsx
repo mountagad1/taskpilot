@@ -7,8 +7,9 @@
 
 import { useEffect, useState } from 'react'
 import { Reveal } from '@/components/ui/reveal'
+import { PhaseCards } from '@/components/marketing/phase-cards'
 import {
-  IconZap, IconSidebar, IconBot, IconTable, IconMail, IconGlobe,
+  IconZap, IconTable, IconMail, IconGlobe,
   IconGauge, IconArrowRight, IconCheck, IconChrome, IconPlay,
   IconLock, IconStar, IconLogo, IconChart,
 } from '@/components/ui/icons'
@@ -93,12 +94,6 @@ const css = `
 .lp-sb-input { padding: 9px 11px; border-top: 1px solid var(--border-subtle); display: flex; gap: 6px; align-items: center; }
 .lp-sb-input input { flex: 1; height: 26px; padding: 0 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border-subtle); color: var(--foreground); font-size: 11px; font-family: var(--font-body); outline: none; }
 
-/* ── How / grid ── */
-.lp-how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 48px; }
-.lp-how-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
-.lp-phase { font-family: var(--font-code); font-size: 11px; color: var(--foreground-tertiary); letter-spacing: 0.06em; margin-bottom: 12px; }
-.lp-how h3 { font-size: 16px; font-weight: 600; margin-bottom: 7px; letter-spacing: -0.01em; }
-.lp-how p { font-size: 13.5px; line-height: 1.6; color: var(--foreground-secondary); }
 
 /* ── Features bento ── */
 .lp-feat { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 48px; }
@@ -195,7 +190,6 @@ const css = `
   .lp-nav-links { display: none; }
   .lp-nav-cta { display: none; }
   .lp-nav-toggle { display: flex; }
-  .lp-how { grid-template-columns: 1fr; }
   .lp-feat { grid-template-columns: 1fr 1fr; }
   .lp-feat-lg, .lp-feat-wide { grid-column: span 2; grid-row: auto; }
   .lp-demo-inner { grid-template-columns: 1fr; }
@@ -393,20 +387,7 @@ export default function LandingPage() {
             </div>
           </Reveal>
           <Reveal delay={1}>
-            <div className="lp-how">
-              {[
-                { icon: <IconZap size={19} />, color: 'var(--indigo-light)', bg: 'rgba(109,118,245,0.12)', phase: '01 · PHASE 1', title: 'Smart Paste', body: "Copy any text and press Alt+V. TaskPilot's 3-layer parser maps it to every field with 95%+ accuracy across HubSpot, Salesforce, Gmail and 50+ apps." },
-                { icon: <IconSidebar size={19} />, color: 'var(--cyan-light)', bg: 'rgba(52,208,232,0.1)', phase: '02 · PHASE 2', title: 'AI Sidebar', body: 'A floating copilot on every tab. Summarize, translate, extract emails and prices, draft replies, or export to Excel — without leaving the page.' },
-                { icon: <IconBot size={19} />, color: 'var(--violet)', bg: 'rgba(167,139,250,0.1)', phase: '03 · PHASE 3', title: 'Browser Actions', body: 'Delegate whole workflows: "Save these leads to HubSpot." "Export this catalog to Excel." TaskPilot plans the steps, runs them, and shows the result.' },
-              ].map((c) => (
-                <div className="ui-card ui-card-hover" key={c.title}>
-                  <div className="lp-how-icon" style={{ background: c.bg, color: c.color }}>{c.icon}</div>
-                  <div className="lp-phase">{c.phase}</div>
-                  <h3>{c.title}</h3>
-                  <p>{c.body}</p>
-                </div>
-              ))}
-            </div>
+            <PhaseCards />
           </Reveal>
         </div>
       </section>
