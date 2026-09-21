@@ -2,9 +2,12 @@
 
 A plan, audited against the live code on 2026-09-21 — every finding below
 names the file it comes from, not a guess about what a Next.js app
-"probably" has. Nothing in this document has been implemented yet; it is
-the plan requested, not the change itself. §8 separates what is safe to fix
-immediately from what needs a decision first.
+"probably" has. §8 separates what needed no decision from what needs one;
+the six no-decision items shipped the same day this document was written —
+see §8's status column and [apps/web/src/lib/site.ts](../../apps/web/src/lib/site.ts)
+onward for what actually landed. §2's findings are left as originally
+written even where since fixed, so this stays a record of what was found,
+not just what remains.
 
 ---
 
@@ -234,16 +237,22 @@ Split exactly the way this session has split every prior architecture
 document: safe, mechanical fixes that need no product decision, versus work
 that needs your input first.
 
-### Ready to implement now — no decision needed
+### Shipped — no decision needed
 
-| # | Task | Risk |
+| # | Task | Status |
 |---|---|---|
-| 1 | Generate and add `public/og-image.png` | None — fills a currently-broken reference |
-| 2 | `app/robots.ts` — disallow `/dashboard/`, `/auth/`; reference sitemap | None — additive |
-| 3 | `app/sitemap.ts` — static routes + marketplace agent slugs | None — additive |
-| 4 | `robots: { index: false }` on dashboard and auth layouts | None — these routes have no SEO value today regardless |
-| 5 | `alternates.canonical` on the 11 existing public metadata exports | None — mechanical, one line each |
-| 6 | `Organization` + `SoftwareApplication` JSON-LD in the root layout | None — additive, renders once |
+| 1 | Generate and add `public/og-image.png` | ✅ Shipped — `apps/web/public/og-image.png` (+ editable `og-image.svg` source) |
+| 2 | `app/robots.ts` — disallow `/dashboard/`, `/auth/`; reference sitemap | ✅ Shipped |
+| 3 | `app/sitemap.ts` — static routes + marketplace agent slugs | ✅ Shipped — reuses the existing `listAgents()` helper |
+| 4 | `robots: { index: false }` on dashboard and auth layouts | ✅ Shipped |
+| 5 | `alternates.canonical` on the 11 existing public metadata exports | ✅ Shipped — all 11, not a subset (see file comment on why that matters) |
+| 6 | `Organization` + `SoftwareApplication` JSON-LD in the root layout | ✅ Shipped — `components/seo/json-ld.tsx`, no `aggregateRating` (§2 explains why) |
+
+Verified live on production, not just asserted: `curl https://taskpilot.cc/robots.txt`
+and `/sitemap.xml` return correct content, canonical tags resolve to
+absolute URLs, both JSON-LD blocks are present and well-formed,
+`/auth/login` carries `noindex, nofollow`, and `og-image.png` returns
+`200 image/png`.
 
 ### Needs your decision first
 
@@ -254,12 +263,8 @@ that needs your input first.
 | 9 | Verify `@taskpilotcc` Twitter handle is correct | Only you can confirm this |
 | 10 | Run real Lighthouse/PSI against `taskpilot.cc` and act on findings | Not blocked on a decision, but is genuine follow-up work, not part of this pass |
 
-Items 1–6 are the ones I'd implement in this same session if you want them
-done now — each is a bug fix or a mechanical addition with no ambiguity
-about the right answer, in the same spirit as the billing audit's "usage
-counter race" fixes: safe to ship without a design conversation. Items 7–10
-are exactly the kind of product/content decision this document's own
-opening line said it wouldn't guess at.
+Items 7–10 are exactly the kind of product/content decision this document's
+opening line said it wouldn't guess at — still open.
 
 ---
 
@@ -267,14 +272,14 @@ opening line said it wouldn't guess at.
 
 | Criterion | Status |
 |---|---|
-| Every page has a title and description | ✅ 10/11 public routes; auth pages pending (§2 Medium) |
-| OG/Twitter image resolves | ❌ Referenced, file missing |
-| `sitemap.xml` exists and is submitted to Search Console | ❌ Missing |
-| `robots.txt` exists and excludes private routes | ❌ Missing |
-| Private routes carry `noindex` | ❌ Missing |
-| Canonical tags present | ❌ Missing |
-| Structured data present | ❌ Missing |
-| No thin/empty pages indexed without a deliberate reason | ⚠️ Two exist (`blog`, `careers`) — deliberate empty states, indexing status is the open decision |
+| Every page has a title and description | ✅ 10/11 public routes; auth pages carry `noindex` instead (§8 #4), so a title there no longer matters for search |
+| OG/Twitter image resolves | ✅ Shipped |
+| `sitemap.xml` exists | ✅ Shipped — not yet submitted to Search Console (§7, not application code) |
+| `robots.txt` exists and excludes private routes | ✅ Shipped |
+| Private routes carry `noindex` | ✅ Shipped |
+| Canonical tags present | ✅ Shipped, all 11 public routes |
+| Structured data present | ✅ Shipped — `Organization` + `SoftwareApplication`, deliberately no rating claim |
+| No thin/empty pages indexed without a deliberate reason | ⚠️ Two exist (`blog`, `careers`) — deliberate empty states, indexing status is still the open decision (§8 #7) |
 | Core Web Vitals — fonts | ✅ Already correct |
 | Core Web Vitals — images | ✅ N/A, none exist |
 | Core Web Vitals — measured against production | ❌ Not yet run |
