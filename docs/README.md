@@ -24,6 +24,7 @@ Read in order for a full picture; each stands alone for reference.
 | [10_PERFORMANCE](architecture/10_PERFORMANCE.md) | Caching, token budgeting, limits |
 | [11_BILLING_ARCHITECTURE](architecture/11_BILLING_ARCHITECTURE.md) | Plans, entitlements, usage, Stripe — audited against the code, not assumed |
 | [12_MOBILE_RESPONSIVE_ARCHITECTURE](architecture/12_MOBILE_RESPONSIVE_ARCHITECTURE.md) | Dashboard drawer nav, responsive grids, what's fixed vs. not yet audited |
+| [13_SEO_ARCHITECTURE](architecture/13_SEO_ARCHITECTURE.md) | Sitemap, robots, canonical, structured data — audited findings + a prioritized plan |
 
 ## Domains
 
