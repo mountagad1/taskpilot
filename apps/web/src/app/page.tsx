@@ -602,7 +602,7 @@ export default function LandingPage() {
               <a href="/" className="lp-logo"><span className="lp-logo-mark"><IconLogo size={16} /></span><span className="lp-logo-name">TaskPilot</span></a>
               <p>The AI operating layer for the browser. Autofill, extract and automate — on any webpage, instantly.</p>
             </div>
-            <div className="lp-footer-col"><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="/changelog">Changelog</a><a href="/roadmap">Roadmap</a></div>
+            <div className="lp-footer-col"><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="/changelog">Changelog</a></div>
             <div className="lp-footer-col"><h4>Company</h4><a href="/about">About</a><a href="/blog">Blog</a><a href="/careers">Careers</a></div>
             <div className="lp-footer-col"><h4>Legal</h4><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/security">Security</a></div>
           </div>
