@@ -6,6 +6,7 @@ import { CATEGORY_LABELS } from '@/lib/format'
 import Link from 'next/link'
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/marketplace' },
   title: 'Agent Marketplace',
   description: 'Buy and sell deployable AI agents built on TaskPilot. One-click install into your browser and dashboard.',
 }

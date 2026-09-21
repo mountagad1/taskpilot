@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { PageShell, Section } from '../_shell'
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/terms' },
   title: 'Terms of Service',
   description: 'The terms that govern your use of TaskPilot.',
 }

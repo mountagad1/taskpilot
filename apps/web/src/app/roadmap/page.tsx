@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { PageShell } from '../_shell'
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/roadmap' },
   title: 'Roadmap',
   description: 'Where TaskPilot is headed — shipped, in progress, and planned.',
 }

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { PageShell } from '../_shell'
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/security' },
   title: 'Security',
   description:
     "How TaskPilot protects your data: server-side AI proxy, least-privilege permissions, encryption, and rate limiting.",

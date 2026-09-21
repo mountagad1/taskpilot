@@ -25,9 +25,10 @@ interface AgentDetail {
 }
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+  const canonical = `/marketplace/${params.slug}`
   const agent = await getAgentBySlug(params.slug)
-  if (!agent) return { title: 'Agent not found' }
-  return { title: agent.name, description: agent.tagline || undefined }
+  if (!agent) return { title: 'Agent not found', alternates: { canonical } }
+  return { title: agent.name, description: agent.tagline || undefined, alternates: { canonical } }
 }
 
 const CAP_LABELS: Record<string, string> = {

@@ -13,12 +13,20 @@
 // to sit inside it — outside, the hook throws for want of a provider.
 // ============================================================
 
+import type { Metadata } from 'next'
 import RequireAuth from '@/components/dashboard/require-auth'
 import DashboardShell from '@/components/dashboard/shell'
 
 // The dashboard is per-user and reads a client-held token, so there is
 // nothing here worth prerendering.
 export const dynamic = 'force-dynamic'
+
+// A private app shell behind sign-in has no SEO value, and an unauthenticated
+// crawler only ever sees the sign-in redirect anyway (RequireAuth) — indexing
+// these 13 routes would just be 13 near-duplicate low-content pages.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (

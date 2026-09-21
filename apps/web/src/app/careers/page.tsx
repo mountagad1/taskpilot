@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { PageShell } from '../_shell'
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/careers' },
   title: 'Careers',
   description: 'Help build the AI operating layer for the browser. Open roles at TaskPilot.',
 }

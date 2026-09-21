@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { PageShell, Section } from '../_shell'
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/privacy' },
   title: 'Privacy Policy',
   description:
     "How TaskPilot collects, uses, and protects your data. Privacy-first by design.",

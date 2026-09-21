@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
+import { SITE_URL } from '@/lib/site'
+import { OrganizationJsonLd, SoftwareApplicationJsonLd } from '@/components/seo/json-ld'
 import './globals.css'
 
 // Inter — the Vercel/Linear-grade sans used for everything (headings + body).
@@ -18,13 +20,14 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://taskpilot.cc'),
+  metadataBase: new URL(SITE_URL),
   title: {
     default: 'TaskPilot — The AI Agent for Your Browser',
     template: '%s | TaskPilot',
   },
   description:
     'Autofill forms, extract structured data, convert webpages into documents, and automate browser work with AI. The AI operating layer for the browser.',
+  alternates: { canonical: '/' },
   keywords: [
     'AI browser extension',
     'autofill AI',
@@ -43,7 +46,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://taskpilot.cc',
+    url: SITE_URL,
     siteName: 'TaskPilot',
     title: 'TaskPilot — The AI Agent for Your Browser',
     description:
@@ -104,6 +107,8 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="bg-background text-foreground antialiased">
+        <OrganizationJsonLd />
+        <SoftwareApplicationJsonLd />
         {children}
         <script
           dangerouslySetInnerHTML={{

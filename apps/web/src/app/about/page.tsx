@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { PageShell, Section } from '../_shell'
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/about' },
   title: 'About',
   description:
     'TaskPilot is the AI operating layer for the browser. Learn what we’re building and why.',

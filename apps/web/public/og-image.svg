@@ -1,0 +1,57 @@
+<!--
+  Editable source for og-image.png (the Open Graph / Twitter Card image
+  referenced site-wide from apps/web/src/app/layout.tsx). Regenerate after
+  editing with:
+    node -e "require('sharp')('og-image.svg',{density:150}).resize(1200,630).png({compressionLevel:9}).toFile('og-image.png')"
+  (run from apps/web/public/, with `sharp` available in apps/web's deps)
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="tp" x1="0" y1="0" x2="1" y2="1" gradientTransform="rotate(30 .5 .5)">
+      <stop offset="0" stop-color="#6d76f5"/>
+      <stop offset="1" stop-color="#4bc6e8"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#6d76f5" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#6d76f5" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#4bc6e8" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#4bc6e8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="textGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8b92f8"/>
+      <stop offset="1" stop-color="#4bc6e8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#08080b"/>
+  <circle cx="180" cy="90" r="360" fill="url(#glow1)"/>
+  <circle cx="1050" cy="560" r="380" fill="url(#glow2)"/>
+
+  <!-- Logo mark + wordmark -->
+  <g transform="translate(80 76)">
+    <rect width="56" height="56" rx="15" fill="url(#tp)"/>
+    <g transform="translate(12.7 12.7) scale(1.276)">
+      <path d="M12 2.5 14 9l6.5 2-6.5 2-2 6.5-2-6.5L3.5 11 10 9l2-6.5Z" fill="#fff"/>
+    </g>
+    <text x="72" y="38" font-family="Helvetica, Arial, sans-serif" font-size="30" font-weight="700" letter-spacing="-0.5" fill="#f2f2f5">TaskPilot</text>
+  </g>
+
+  <!-- Eyebrow pill -->
+  <g transform="translate(80 176)">
+    <rect width="286" height="34" rx="17" fill="none" stroke="#3a3a4a" stroke-width="1"/>
+    <circle cx="22" cy="17" r="4" fill="#4ade80"/>
+    <text x="38" y="22" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#a8a8b8">AI Agent for Your Browser</text>
+  </g>
+
+  <!-- Headline -->
+  <text x="78" y="300" font-family="Helvetica, Arial, sans-serif" font-size="68" font-weight="700" letter-spacing="-1.5" fill="#f2f2f5">Turn natural language</text>
+  <text x="78" y="378" font-family="Helvetica, Arial, sans-serif" font-size="68" font-weight="700" letter-spacing="-1.5" fill="url(#textGrad)">into real browser actions.</text>
+
+  <!-- Subheadline -->
+  <text x="80" y="440" font-family="Helvetica, Arial, sans-serif" font-size="24" fill="#a8a8b8">Fill forms, extract data, automate work — from any website.</text>
+
+  <!-- Footer -->
+  <text x="80" y="556" font-family="Helvetica, Arial, sans-serif" font-size="20" font-weight="600" fill="#6b6b7b">taskpilot.cc</text>
+</svg>

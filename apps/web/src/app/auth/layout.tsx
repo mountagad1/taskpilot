@@ -1,10 +1,17 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 
 // Auth screens talk to Supabase from the client on mount, so there is
 // nothing to gain from static export — and prerendering them at build
 // time would require the Supabase keys to be present in CI.
 export const dynamic = 'force-dynamic'
+
+// Sign-in/sign-up/reset screens have no unique content to rank on and
+// nothing behind them a search result should ever link to directly.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+}
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
