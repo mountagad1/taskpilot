@@ -8,6 +8,9 @@
 import { useEffect, useState } from 'react'
 import { Reveal } from '@/components/ui/reveal'
 import { PhaseDeck } from '@/components/marketing/phase-deck'
+import { UseCaseCarousel } from '@/components/marketing/use-case-carousel'
+import { Faq } from '@/components/marketing/faq'
+import { FaqJsonLd } from '@/components/seo/json-ld'
 import {
   IconZap, IconTable, IconMail, IconGlobe,
   IconGauge, IconArrowRight, IconCheck, IconChrome, IconPlay,
@@ -441,6 +444,22 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* USE CASES */}
+      <section id="use-cases" className="ui-section">
+        <div className="ui-container">
+          <Reveal>
+            <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto' }}>
+              <span className="eyebrow">Use cases</span>
+              <h2 style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 600, letterSpacing: '-0.025em', marginTop: 16 }}>Built for the work you actually do.</h2>
+              <p style={{ marginTop: 14, fontSize: 16, color: 'var(--foreground-secondary)', lineHeight: 1.6 }}>Drag, swipe or use the arrows — find the workflow that looks like your day.</p>
+            </div>
+          </Reveal>
+          <Reveal delay={1}>
+            <UseCaseCarousel />
+          </Reveal>
+        </div>
+      </section>
+
       {/* DEMO */}
       <section id="demo" className="ui-section">
         <div className="ui-container">
@@ -559,6 +578,23 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* FAQ */}
+      <section id="faq" className="ui-section">
+        <div className="ui-container">
+          <Reveal>
+            <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto' }}>
+              <span className="eyebrow">FAQ</span>
+              <h2 style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 600, letterSpacing: '-0.025em', marginTop: 16 }}>Questions, answered.</h2>
+              <p style={{ marginTop: 14, fontSize: 16, color: 'var(--foreground-secondary)', lineHeight: 1.6 }}>Still stuck? Email <a href="mailto:hello@taskpilot.cc" style={{ color: 'var(--indigo-light)' }}>hello@taskpilot.cc</a>.</p>
+            </div>
+          </Reveal>
+          <Reveal delay={1}>
+            <Faq />
+          </Reveal>
+          <FaqJsonLd />
+        </div>
+      </section>
+
       {/* CTA */}
       <section className="lp-cta ui-section">
         <div className="lp-cta-glow" />
@@ -566,7 +602,7 @@ export default function LandingPage() {
           <Reveal>
             <div style={{ marginBottom: 20, position: 'relative' }}><span className="eyebrow">Get started today</span></div>
             <h2>Your browser, finally <span className="gradient-text">working for you.</span></h2>
-            <p>Join 14,200+ people who stopped doing manual browser work. Free forever, no card required.</p>
+            <p>Free forever plan — 30 AI actions a month, no credit card required.</p>
             <div className="lp-cta-actions">
               <a href="/auth/signup" className="btn btn-primary btn-lg"><IconChrome size={15} /> Add to Chrome — free</a>
               <a href="#features" className="btn btn-secondary btn-lg">Explore features</a>
@@ -583,7 +619,7 @@ export default function LandingPage() {
               <a href="/" className="lp-logo"><span className="lp-logo-mark"><IconLogo size={16} /></span><span className="lp-logo-name">TaskPilot</span></a>
               <p>The AI operating layer for the browser. Autofill, extract and automate — on any webpage, instantly.</p>
             </div>
-            <div className="lp-footer-col"><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="/changelog">Changelog</a></div>
+            <div className="lp-footer-col"><h4>Product</h4><a href="#features">Features</a><a href="#use-cases">Use cases</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a><a href="/changelog">Changelog</a></div>
             <div className="lp-footer-col"><h4>Company</h4><a href="/about">About</a><a href="/blog">Blog</a><a href="/careers">Careers</a></div>
             <div className="lp-footer-col"><h4>Legal</h4><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/security">Security</a></div>
           </div>

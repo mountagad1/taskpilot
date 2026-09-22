@@ -1,4 +1,27 @@
 import { SITE_URL } from '@/lib/site'
+import { FAQS } from '@/components/marketing/faq'
+
+// Generated from the same FAQS array the section renders, because Google
+// takes manual action on FAQ markup whose answers don't match what the page
+// actually shows. Rendered only on the page that shows the FAQ.
+export function FaqJsonLd() {
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: FAQS.map((f) => ({
+      '@type': 'Question',
+      name: f.q,
+      acceptedAnswer: { '@type': 'Answer', text: f.a },
+    })),
+  }
+  return (
+    <script
+      type="application/ld+json"
+      // eslint-disable-next-line react/no-danger
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
+    />
+  )
+}
 
 // Rendered once, in the root layout. Deliberately does NOT include
 // aggregateRating/review data — TaskPilot has no verified rating source to
