@@ -23,8 +23,14 @@ const config: Config = {
         foreground: 'var(--foreground)',
         'foreground-secondary': 'var(--foreground-secondary)',
         'foreground-tertiary': 'var(--foreground-tertiary)',
+        'foreground-muted': 'var(--foreground-muted)',
         border: 'var(--border)',
         surface: 'var(--surface)',
+        // shadcn-convention aliases, mapped onto the existing design tokens
+        // so registry components (bg-muted, text-muted-foreground) render in
+        // the TaskPilot palette instead of Tailwind defaults.
+        muted: 'var(--surface)',
+        'muted-foreground': 'var(--foreground-tertiary)',
         accent: 'var(--accent)',
         indigo: {
           DEFAULT: 'var(--indigo)',

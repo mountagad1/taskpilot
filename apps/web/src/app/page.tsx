@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { Reveal } from '@/components/ui/reveal'
-import { PhaseCards } from '@/components/marketing/phase-cards'
+import { PhaseDeck } from '@/components/marketing/phase-deck'
 import {
   IconZap, IconTable, IconMail, IconGlobe,
   IconGauge, IconArrowRight, IconCheck, IconChrome, IconPlay,
@@ -387,7 +387,7 @@ export default function LandingPage() {
             </div>
           </Reveal>
           <Reveal delay={1}>
-            <PhaseCards />
+            <PhaseDeck />
           </Reveal>
         </div>
       </section>
