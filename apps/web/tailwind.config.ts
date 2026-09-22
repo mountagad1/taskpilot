@@ -29,7 +29,11 @@ const config: Config = {
         // shadcn-convention aliases, mapped onto the existing design tokens
         // so registry components (bg-muted, text-muted-foreground) render in
         // the TaskPilot palette instead of Tailwind defaults.
-        muted: 'var(--surface)',
+        //
+        // NOT --surface: that token is a 2.6% white *overlay* meant to tint
+        // whatever sits behind it, while shadcn's `muted` is an opaque fill.
+        // Pointing muted at it makes stacked cards see-through.
+        muted: 'var(--background-tertiary)',
         'muted-foreground': 'var(--foreground-tertiary)',
         accent: 'var(--accent)',
         indigo: {

@@ -27,12 +27,13 @@ import { IconCheck } from '@/components/ui/icons'
 import { PHASES } from './phases'
 import { PhaseDemo, PhaseDemoStyles } from './phase-demos'
 
-// Deck slot by depth-from-front. Mirrors the registry deck's down-and-right
-// cascade, so the front-most card is the one dealt last and lowest.
+// Deck slot by depth-from-front. The front card sits at the origin and the
+// rest cascade down-and-right behind it, so only their edges show and the
+// active card's copy is never competing with the text underneath it.
 const SLOTS = [
-  'md:translate-x-16 md:translate-y-14 md:scale-100',
-  'md:translate-x-8 md:translate-y-7 md:scale-[0.97]',
-  'md:translate-x-0 md:translate-y-0 md:scale-[0.94]',
+  'md:translate-x-0 md:translate-y-0 md:scale-100',
+  'md:translate-x-[38px] md:translate-y-[30px] md:scale-[0.965]',
+  'md:translate-x-[76px] md:translate-y-[60px] md:scale-[0.93]',
 ]
 
 export function PhaseDeck() {
@@ -111,15 +112,13 @@ export function PhaseDeck() {
               className={[
                 '[grid-area:stack] duration-500',
                 // Mobile: a plain column. Override the primitive's deck geometry.
-                'h-[21.5rem] w-full max-w-[26rem] skew-y-0',
+                'h-[20.5rem] w-full max-w-[26rem] skew-y-0',
                 // md+: the actual deck.
-                'md:h-[20rem] md:w-[26rem] md:-skew-y-[8deg]',
+                // 8deg (the registry default) is fine on short labels but
+                // shears body copy badly; 5 keeps the deck read.
+                'md:h-[19rem] md:w-[26rem] md:-skew-y-[5deg]',
                 SLOTS[depth] ?? SLOTS[SLOTS.length - 1],
-                // Depth cue. Filters (not an overlay) so there's no stacking
-                // fight with the 3D faces underneath.
-                isFront
-                  ? 'md:opacity-100 md:grayscale-0 md:brightness-100'
-                  : 'md:opacity-80 md:grayscale md:brightness-[0.8] md:hover:opacity-100 md:hover:grayscale-0 md:hover:brightness-100',
+                isFront ? 'md:grayscale-0' : 'md:grayscale',
               ].join(' ')}
               // --dc-accent is set on the outer element and inherits down to
               // the faces, so the accent border needs no extra prop.
@@ -129,7 +128,19 @@ export function PhaseDeck() {
                   filter: isFront ? `drop-shadow(0 22px 45px rgba(${phase.rgb},0.22))` : undefined,
                 } as CSSProperties
               }
-              faceClassName={isFront ? 'border-[color:var(--dc-accent)]' : undefined}
+              // Cards behind get a scrim over the face rather than a dimming
+              // filter: it mutes their copy so it can't bleed through the gaps
+              // as stray characters, while leaving the border and card shape
+              // crisp. It lifts on hover to preview what's underneath.
+              faceClassName={[
+                isFront
+                  ? 'border-[color:var(--dc-accent)]'
+                  : // md: only — the scrim exists to stop cards behind bleeding
+                    // through the deck. In the mobile column nothing overlaps,
+                    // so scrimming there would just blank out two of three cards.
+                    "md:after:absolute md:after:inset-0 md:after:bg-background md:after:content-[''] " +
+                    'md:after:transition-opacity md:after:duration-500 md:group-hover:after:opacity-0',
+              ].join(' ')}
               front={<PhaseFront phase={phase} isFront={isFront} />}
               back={<PhaseBack phase={phase} />}
             />
@@ -147,27 +158,27 @@ export function PhaseDeck() {
 function PhaseFront({ phase, isFront }: { phase: (typeof PHASES)[number]; isFront: boolean }) {
   return (
     <>
-      <div className="flex w-full items-center gap-3">
-        <span
-          className="flex size-9 shrink-0 items-center justify-center rounded-[10px]"
-          style={{ background: phase.bg, color: phase.color }}
-        >
-          {phase.icon}
-        </span>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground-tertiary">
-          {phase.eyebrowLabel}
-        </span>
-        <span
-          className="ml-auto font-mono text-[22px] font-semibold leading-none opacity-40"
-          style={{ color: phase.color }}
-          aria-hidden="true"
-        >
-          {phase.number}
-        </span>
-      </div>
-
       <div className="w-full">
-        <h3 className="text-[19px] font-semibold tracking-[-0.01em]">{phase.title}</h3>
+        <div className="flex w-full items-center gap-3">
+          <span
+            className="flex size-9 shrink-0 items-center justify-center rounded-[10px]"
+            style={{ background: phase.bg, color: phase.color }}
+          >
+            {phase.icon}
+          </span>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground-tertiary">
+            {phase.eyebrowLabel}
+          </span>
+          <span
+            className="ml-auto font-mono text-[22px] font-semibold leading-none opacity-40"
+            style={{ color: phase.color }}
+            aria-hidden="true"
+          >
+            {phase.number}
+          </span>
+        </div>
+
+        <h3 className="mt-4 text-[19px] font-semibold tracking-[-0.01em]">{phase.title}</h3>
         <p className="mt-1.5 text-[14px] font-medium leading-snug text-foreground-secondary">
           {phase.tagline}
         </p>
@@ -218,7 +229,7 @@ function PhaseBack({ phase }: { phase: (typeof PHASES)[number] }) {
         />
       </div>
 
-      <div className="w-full rounded-lg border border-border bg-background p-3">
+      <div className="w-full rounded-lg border border-border bg-background p-2.5">
         <PhaseDemo id={phase.id} />
       </div>
 

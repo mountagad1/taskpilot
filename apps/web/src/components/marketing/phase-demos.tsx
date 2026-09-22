@@ -101,7 +101,6 @@ function ActionsDemo() {
   const steps = [
     'Open leads page',
     'Extract 24 leads',
-    'Validate fields',
     'Open HubSpot',
     'Create contacts',
     'Verify results',
@@ -162,7 +161,7 @@ export function PhaseDemoStyles() {
       /* ── Phase 3 — Browser Actions ── */
       .ac-request { margin-bottom: 9px; }
       .ac-request-quote { font-size: 11.5px; font-style: italic; color: var(--foreground-secondary); }
-      .ac-steps { display: flex; flex-direction: column; gap: 5px; margin-bottom: 9px; }
+      .ac-steps { display: flex; flex-direction: column; gap: 4px; margin-bottom: 9px; }
       .ac-step {
         display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: var(--foreground-muted);
         opacity: 0.4; animation: ac-reveal 4.5s ease-in-out infinite;

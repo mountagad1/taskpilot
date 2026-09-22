@@ -58,11 +58,16 @@ export interface DisplayCardProps {
   style?: CSSProperties
 }
 
+// `bg-muted` is deliberately NOT written as upstream's `bg-muted/70`: Tailwind
+// can't apply an opacity modifier to a color defined as a bare var(), so it
+// silently emits no declaration at all and the face renders fully transparent.
+// Stacked cards need an opaque fill regardless — the translucent look comes
+// from the token itself sitting just above --background.
 const FACE =
   'absolute inset-0 flex flex-col justify-between overflow-hidden rounded-xl border-2 border-border ' +
-  'bg-muted/70 px-4 py-3 backdrop-blur-sm [backface-visibility:hidden] ' +
+  'bg-muted px-4 py-3 backdrop-blur-sm [backface-visibility:hidden] ' +
   '[-webkit-backface-visibility:hidden] transition-colors duration-700 ' +
-  'group-hover:border-white/20 group-hover:bg-muted'
+  'group-hover:border-white/20'
 
 export function DisplayCard({
   className,
