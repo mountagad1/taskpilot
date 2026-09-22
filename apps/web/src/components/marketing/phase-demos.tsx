@@ -142,6 +142,12 @@ export function PhaseDemoStyles() {
       .sp-field-value { display: flex; align-items: center; gap: 4px; color: var(--foreground-secondary); font-family: var(--font-mono, monospace); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .sp-check { color: var(--success); flex-shrink: 0; }
       @keyframes sp-fill { 0% { opacity: 0; transform: translateX(-4px); } 10%, 85% { opacity: 1; transform: translateX(0); } 95%, 100% { opacity: 0; } }
+      /* The mobile card is ~264px wide; three columns inside it crush the
+         clipboard and form panels, so stack them and turn the arrow. */
+      @media (max-width: 767px) {
+        .sp-demo { grid-template-columns: 1fr; gap: 6px; }
+        .sp-arrow { transform: rotate(90deg); padding: 1px 0; }
+      }
       @media (prefers-reduced-motion: reduce) { .sp-field { opacity: 1; animation: none; } }
 
       /* ── Phase 2 — AI Sidebar ── */

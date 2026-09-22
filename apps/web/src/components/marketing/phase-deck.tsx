@@ -14,11 +14,11 @@
 //     live simulation of that phase actually doing its job.
 //   Clicking the flipped card flips it back. Enter/Space do the same.
 //
-// The deck is skewed and overlapped on md+, where there's room for depth.
-// Below that it degrades to a plain stacked column: no skew, no offsets, no
-// overlap, full width, flip intact. Nothing is hidden behind hover — every
-// card's headline pitch is on the front face at rest, so a phone user
-// scrolling past still gets the whole argument.
+// The same deck renders at every breakpoint — skew, cascade, scrim and flip
+// all intact on a phone; only the card size and the cascade offsets scale
+// down. Nothing is hidden behind hover: the front card's whole pitch is on
+// its face at rest, so a phone user who never taps still gets the argument,
+// and tap does exactly what click does.
 // ============================================================
 
 import { useState, type CSSProperties } from 'react'
@@ -29,11 +29,15 @@ import { PhaseDemo, PhaseDemoStyles } from './phase-demos'
 
 // Deck slot by depth-from-front. The front card sits at the origin and the
 // rest cascade down-and-right behind it, so only their edges show and the
-// active card's copy is never competing with the text underneath it.
+// active card's copy never competes with the text underneath it.
+// Same deck at every size — only the geometry scales down. The mobile
+// offsets are sized so the deepest card's right edge still clears the
+// container: card width + 2 x offset has to fit the available width, or the
+// stack pushes the document sideways.
 const SLOTS = [
-  'md:translate-x-0 md:translate-y-0 md:scale-100',
-  'md:translate-x-[38px] md:translate-y-[30px] md:scale-[0.965]',
-  'md:translate-x-[76px] md:translate-y-[60px] md:scale-[0.93]',
+  'translate-x-0 translate-y-0 scale-100',
+  'translate-x-[18px] translate-y-[15px] scale-[0.965] md:translate-x-[38px] md:translate-y-[30px]',
+  'translate-x-[36px] translate-y-[30px] scale-[0.93] md:translate-x-[76px] md:translate-y-[60px]',
 ]
 
 export function PhaseDeck() {
@@ -88,7 +92,7 @@ export function PhaseDeck() {
 
       {/* The deck */}
       <div
-        className="flex flex-col items-center gap-5 md:grid md:min-h-[28rem] md:place-items-center md:gap-0 md:[grid-template-areas:'stack']"
+        className="grid min-h-[27rem] place-items-center [grid-template-areas:'stack'] md:min-h-[28rem]"
         role="group"
         aria-label="TaskPilot phases — select a card to bring it forward, then again to see it run"
       >
@@ -111,14 +115,12 @@ export function PhaseDeck() {
               }
               className={[
                 '[grid-area:stack] duration-500',
-                // Mobile: a plain column. Override the primitive's deck geometry.
-                'h-[20.5rem] w-full max-w-[26rem] skew-y-0',
-                // md+: the actual deck.
                 // 8deg (the registry default) is fine on short labels but
-                // shears body copy badly; 5 keeps the deck read.
-                'md:h-[19rem] md:w-[26rem] md:-skew-y-[5deg]',
+                // shears body copy badly; 5 keeps the deck readable.
+                'h-[24rem] w-[16.5rem] -skew-y-[5deg]',
+                'md:h-[19rem] md:w-[26rem]',
                 SLOTS[depth] ?? SLOTS[SLOTS.length - 1],
-                isFront ? 'md:grayscale-0' : 'md:grayscale',
+                isFront ? 'grayscale-0' : 'grayscale',
               ].join(' ')}
               // --dc-accent is set on the outer element and inherits down to
               // the faces, so the accent border needs no extra prop.
@@ -135,11 +137,10 @@ export function PhaseDeck() {
               faceClassName={[
                 isFront
                   ? 'border-[color:var(--dc-accent)]'
-                  : // md: only — the scrim exists to stop cards behind bleeding
-                    // through the deck. In the mobile column nothing overlaps,
-                    // so scrimming there would just blank out two of three cards.
-                    "md:after:absolute md:after:inset-0 md:after:bg-background md:after:content-[''] " +
-                    'md:after:transition-opacity md:after:duration-500 md:group-hover:after:opacity-0',
+                  : // Applies at every size now that the cards overlap on
+                    // mobile too, otherwise the copy underneath bleeds through.
+                    "after:absolute after:inset-0 after:bg-background after:content-[''] " +
+                    'after:transition-opacity after:duration-500 md:group-hover:after:opacity-0',
               ].join(' ')}
               front={<PhaseFront phase={phase} isFront={isFront} />}
               back={<PhaseBack phase={phase} />}
@@ -149,7 +150,7 @@ export function PhaseDeck() {
       </div>
 
       <p className="mt-7 text-center text-[12.5px] text-foreground-tertiary md:mt-10">
-        Click a card to bring it forward — click it again to watch that phase run.
+        Tap or click a card to bring it forward, then again to watch that phase run.
       </p>
     </div>
   )
@@ -202,7 +203,7 @@ function PhaseFront({ phase, isFront }: { phase: (typeof PHASES)[number]; isFron
           className="mt-2.5 block text-[11px] font-medium"
           style={{ color: isFront ? phase.color : 'var(--foreground-muted)' }}
         >
-          {isFront ? 'Click to see it run' : 'Click to bring forward'}
+          {isFront ? 'See it run →' : 'Bring forward'}
         </span>
       </div>
     </>
@@ -236,7 +237,7 @@ function PhaseBack({ phase }: { phase: (typeof PHASES)[number] }) {
       <div className="flex w-full items-center gap-1.5 text-[11px] font-medium text-foreground-tertiary">
         <IconCheck size={12} style={{ color: 'var(--success)' }} />
         {phase.capabilities[0]} · {phase.capabilities[phase.capabilities.length - 1]}
-        <span className="ml-auto text-foreground-muted">Click to flip back</span>
+        <span className="ml-auto text-foreground-muted">Flip back</span>
       </div>
     </>
   )
