@@ -558,7 +558,7 @@ export default function LandingPage() {
           <Reveal>
             <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto' }}>
               <span className="eyebrow">Testimonials</span>
-              <h2 style={{ fontSize: 'clamp(24px,3.2vw,34px)', fontWeight: 600, letterSpacing: '-0.025em', marginTop: 16 }}>Trusted by people who live in their browser.</h2>
+              <h2 style={{ fontSize: 'clamp(24px,3.2vw,34px)', fontWeight: 600, letterSpacing: '-0.025em', marginTop: 16 }}>From people who live in their browser.</h2>
             </div>
           </Reveal>
           <Reveal delay={1}>
