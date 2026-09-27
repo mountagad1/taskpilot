@@ -14,7 +14,7 @@ import { FaqJsonLd } from '@/components/seo/json-ld'
 import {
   IconZap, IconTable, IconMail, IconGlobe,
   IconGauge, IconArrowRight, IconCheck, IconChrome, IconPlay,
-  IconLock, IconStar, IconLogo, IconChart,
+  IconLock, IconLogo, IconChart,
 } from '@/components/ui/icons'
 
 const css = `
@@ -97,7 +97,6 @@ const css = `
 .lp-sb-input { padding: 9px 11px; border-top: 1px solid var(--border-subtle); display: flex; gap: 6px; align-items: center; }
 .lp-sb-input input { flex: 1; height: 26px; padding: 0 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border-subtle); color: var(--foreground); font-size: 11px; font-family: var(--font-body); outline: none; }
 
-
 /* ── Features bento ── */
 .lp-feat { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 48px; }
 .lp-feat-lg { grid-column: span 2; grid-row: span 2; }
@@ -162,16 +161,6 @@ const css = `
 .lp-price-feats li.dim { color: var(--foreground-muted); }
 .lp-price-feats li.dim svg { color: var(--foreground-muted); }
 
-/* ── Testimonials ── */
-.lp-testi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; max-width: 940px; margin: 40px auto 0; }
-.lp-testi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; text-align: left; }
-.lp-testi-stars { display: flex; gap: 2px; color: var(--warning); margin-bottom: 13px; }
-.lp-testi-text { font-size: 13.5px; line-height: 1.6; color: var(--foreground-secondary); margin-bottom: 16px; }
-.lp-testi-author { display: flex; align-items: center; gap: 10px; }
-.lp-testi-av { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
-.lp-testi-name { font-size: 13px; font-weight: 550; }
-.lp-testi-role { font-size: 11.5px; color: var(--foreground-tertiary); }
-
 /* ── CTA ── */
 .lp-cta { text-align: center; position: relative; overflow: hidden; background: var(--background-secondary); border-top: 1px solid var(--border-subtle); }
 .lp-cta-glow { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 620px; max-width: 120vw; height: 340px; background: radial-gradient(ellipse, rgba(109,118,245,0.12) 0%, transparent 66%); pointer-events: none; }
@@ -197,7 +186,6 @@ const css = `
   .lp-feat-lg, .lp-feat-wide { grid-column: span 2; grid-row: auto; }
   .lp-demo-inner { grid-template-columns: 1fr; }
   .lp-price { grid-template-columns: 1fr; max-width: 400px; }
-  .lp-testi { grid-template-columns: 1fr; max-width: 440px; }
   .lp-footer-grid { grid-template-columns: 1fr 1fr; }
   .lp-sb { display: none; }
 }
@@ -236,12 +224,6 @@ const DEMO_FIELDS = [
 ]
 
 const INTEGRATIONS = ['HubSpot', 'Salesforce', 'LinkedIn', 'Gmail', 'Notion', 'Airtable', 'Slack', 'Google Sheets', 'Pipedrive', 'Outlook', 'Shopify', 'Zapier']
-
-const TESTIMONIALS = [
-  { text: 'Smart Paste cut my HubSpot data entry from 3 minutes per contact to under 10 seconds. I saved 8+ hours this week alone.', initials: 'MR', name: 'Marc Reynolds', role: 'SDR Lead · Segment', bg: 'rgba(109,118,245,0.16)', color: 'var(--indigo-light)' },
-  { text: 'The AI Sidebar is like a research assistant on every tab. I summarize competitor sites and extract pricing without leaving the page.', initials: 'YK', name: 'Yuki Kato', role: 'Product Manager · Linear', bg: 'rgba(52,208,232,0.12)', color: 'var(--cyan-light)' },
-  { text: "TaskPilot's extraction and Excel export replaced a custom scraper we paid $400/month to maintain. Across 200+ competitor SKUs.", initials: 'AS', name: 'Alexia Santos', role: 'Growth Lead · GOAT', bg: 'rgba(34,197,94,0.12)', color: '#6ee7a8' },
-]
 
 export default function LandingPage() {
   const [heroFilled, setHeroFilled] = useState(0)
@@ -547,32 +529,6 @@ export default function LandingPage() {
                 feats={[['Unlimited AI actions', 1], ['Advanced field mapping', 1], ['Full AI Sidebar', 1], ['Unlimited exports', 1], ['HubSpot + Notion', 1], ['Browser Actions', 1], ['Priority support', 1]]}
               />
               <PriceCard name="Enterprise" amount={<span style={{ fontSize: 26 }}>Custom</span>} per="Per-seat pricing — scales with your team" cta="Contact sales" href="mailto:hello@taskpilot.cc" feats={[['Everything in Pro', 1], ['Volume per-seat discounts', 1], ['SSO / SAML', 1], ['Team management', 1], ['REST API access', 1], ['SLA + security review', 1]]} />
-            </div>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* TESTIMONIALS */}
-      <section className="ui-section" style={{ background: 'var(--background-secondary)', borderTop: '1px solid var(--border-subtle)' }}>
-        <div className="ui-container">
-          <Reveal>
-            <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto' }}>
-              <span className="eyebrow">Testimonials</span>
-              <h2 style={{ fontSize: 'clamp(24px,3.2vw,34px)', fontWeight: 600, letterSpacing: '-0.025em', marginTop: 16 }}>From people who live in their browser.</h2>
-            </div>
-          </Reveal>
-          <Reveal delay={1}>
-            <div className="lp-testi">
-              {TESTIMONIALS.map((t) => (
-                <div className="lp-testi-card" key={t.initials}>
-                  <div className="lp-testi-stars">{[0, 1, 2, 3, 4].map((i) => <IconStar key={i} size={13} />)}</div>
-                  <p className="lp-testi-text">{t.text}</p>
-                  <div className="lp-testi-author">
-                    <div className="lp-testi-av" style={{ background: t.bg, color: t.color }}>{t.initials}</div>
-                    <div><div className="lp-testi-name">{t.name}</div><div className="lp-testi-role">{t.role}</div></div>
-                  </div>
-                </div>
-              ))}
             </div>
           </Reveal>
         </div>
