@@ -1,5 +1,6 @@
 import { SITE_URL } from '@/lib/site'
 import { FAQS } from '@/components/marketing/faq'
+import { FOUNDERS } from '@/components/marketing/founders'
 
 // Generated from the same FAQS array the section renders, because Google
 // takes manual action on FAQ markup whose answers don't match what the page
@@ -35,6 +36,15 @@ export function OrganizationJsonLd() {
     name: 'TaskPilot',
     url: SITE_URL,
     logo: `${SITE_URL}/icon-512.png`,
+    // Same people the Founders section renders, from the same array, each
+    // with the profile the page links to as sameAs — the evidence for the
+    // claim travels with it.
+    founder: FOUNDERS.map((f) => ({
+      '@type': 'Person',
+      name: f.name,
+      jobTitle: f.role,
+      sameAs: f.href,
+    })),
   }
   return (
     <script

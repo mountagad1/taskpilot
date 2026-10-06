@@ -10,6 +10,7 @@ import { Reveal } from '@/components/ui/reveal'
 import { PhaseDeck } from '@/components/marketing/phase-deck'
 import { UseCaseCarousel } from '@/components/marketing/use-case-carousel'
 import { Faq } from '@/components/marketing/faq'
+import { Founders } from '@/components/marketing/founders'
 import { FaqJsonLd } from '@/components/seo/json-ld'
 import {
   IconZap, IconTable, IconMail, IconGlobe,
@@ -534,6 +535,22 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* FOUNDERS */}
+      <section id="team" className="ui-section" style={{ background: 'var(--background-secondary)', borderTop: '1px solid var(--border-subtle)' }}>
+        <div className="ui-container">
+          <Reveal>
+            <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto' }}>
+              <span className="eyebrow">Team</span>
+              <h2 style={{ fontSize: 'clamp(24px,3.2vw,34px)', fontWeight: 600, letterSpacing: '-0.025em', marginTop: 16 }}>Who&apos;s building TaskPilot.</h2>
+              <p style={{ marginTop: 14, fontSize: 16, color: 'var(--foreground-secondary)', lineHeight: 1.6 }}>Two founders, building the browser layer we wanted to use ourselves.</p>
+            </div>
+          </Reveal>
+          <Reveal delay={1}>
+            <Founders />
+          </Reveal>
+        </div>
+      </section>
+
       {/* FAQ */}
       <section id="faq" className="ui-section">
         <div className="ui-container">
@@ -576,7 +593,7 @@ export default function LandingPage() {
               <p>The AI operating layer for the browser. Autofill, extract and automate — on any webpage, instantly.</p>
             </div>
             <div className="lp-footer-col"><h4>Product</h4><a href="#features">Features</a><a href="#use-cases">Use cases</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a><a href="/changelog">Changelog</a></div>
-            <div className="lp-footer-col"><h4>Company</h4><a href="/about">About</a><a href="/blog">Blog</a><a href="/careers">Careers</a></div>
+            <div className="lp-footer-col"><h4>Company</h4><a href="/about">About</a><a href="#team">Team</a><a href="/blog">Blog</a><a href="/careers">Careers</a></div>
             <div className="lp-footer-col"><h4>Legal</h4><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/security">Security</a></div>
           </div>
           <div className="lp-footer-bottom">
