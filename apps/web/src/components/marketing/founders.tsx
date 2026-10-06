@@ -22,6 +22,8 @@ export interface Founder {
   bio: string
   href: string
   linkLabel: string
+  /** Square avatar in /public. Falls back to initials when absent. */
+  photo?: string
   accent: string
   bg: string
 }
@@ -44,6 +46,7 @@ export const FOUNDERS: Founder[] = [
     bio: 'Senior full-stack and AI engineer. Builds the agent systems behind Browser Actions — Google ADK, Vertex AI, RAG and the services underneath. M.Sc. from Musashino University, Japan.',
     href: 'https://github.com/schullegerhard',
     linkLabel: 'GitHub',
+    photo: '/team/yuki-nakamura.jpg',
     accent: 'var(--cyan-light)',
     bg: 'rgba(52,208,232,0.14)',
   },
@@ -58,13 +61,29 @@ export function Founders() {
           className="rounded-xl border border-border bg-surface p-5 text-left"
         >
           <div className="flex items-center gap-3">
-            <span
-              className="flex size-10 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold"
-              style={{ background: f.bg, color: f.accent }}
-              aria-hidden="true"
-            >
-              {f.initials}
-            </span>
+            {f.photo ? (
+              // alt is empty on purpose: the name sits right beside it, so a
+              // described avatar would just read the person out twice.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={f.photo}
+                alt=""
+                width={40}
+                height={40}
+                loading="lazy"
+                decoding="async"
+                className="size-10 shrink-0 rounded-full object-cover"
+                style={{ boxShadow: `0 0 0 1px ${f.bg}` }}
+              />
+            ) : (
+              <span
+                className="flex size-10 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold"
+                style={{ background: f.bg, color: f.accent }}
+                aria-hidden="true"
+              >
+                {f.initials}
+              </span>
+            )}
             <div>
               <div className="text-[14.5px] font-semibold">{f.name}</div>
               <div className="text-[12px] text-foreground-tertiary">{f.role}</div>
