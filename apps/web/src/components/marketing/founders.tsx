@@ -36,6 +36,7 @@ export const FOUNDERS: Founder[] = [
     bio: 'Founder and startup builder, based in Le Mans, France. Also behind Page2doc — turning web pages into clean spreadsheets, the same problem that grew into TaskPilot.',
     href: 'https://www.linkedin.com/in/mountaga-diallo-0a7111268/',
     linkLabel: 'LinkedIn',
+    photo: '/team/mountaga-diallo.jpg',
     accent: 'var(--indigo-light)',
     bg: 'rgba(109,118,245,0.16)',
   },
