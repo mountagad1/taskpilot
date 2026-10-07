@@ -33,7 +33,7 @@ export const FOUNDERS: Founder[] = [
     name: 'Mountaga Diallo',
     initials: 'MD',
     role: 'Co-founder & CEO',
-    bio: 'Founder and startup builder, based in Le Mans, France. Also behind Page2doc — turning web pages into clean spreadsheets, the same problem that grew into TaskPilot. Baccalauréat professionnel in commerce from Ecofac Business School.',
+    bio: 'Founder and startup builder, based in Le Mans, France. Also behind Page2doc — turning web pages into clean spreadsheets, the same problem that grew into TaskPilot. Professional Baccalaureate in commerce from Ecofac Business School.',
     href: 'https://www.linkedin.com/in/mountaga-diallo-0a7111268/',
     linkLabel: 'LinkedIn',
     photo: '/team/mountaga-diallo.jpg',
