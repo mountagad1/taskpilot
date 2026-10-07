@@ -21,7 +21,7 @@
 // and tap does exactly what click does.
 // ============================================================
 
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { DisplayCard } from '@/components/ui/display-cards'
 import { IconCheck } from '@/components/ui/icons'
 import { PHASES } from './phases'
@@ -41,8 +41,58 @@ const SLOTS = [
 ]
 
 export function PhaseDeck() {
-  const [active, setActive] = useState(PHASES.length - 1)
+  // Starts on Phase 01 — scrolling walks the deck forward to 03.
+  const [active, setActive] = useState(0)
   const [flipped, setFlipped] = useState(false)
+  const trackRef = useRef<HTMLDivElement>(null)
+  // The last index scrolling itself produced. Compared against this rather
+  // than against `active`, so a card picked by hand stays put until the
+  // scroll actually crosses into a different band instead of being yanked
+  // back by the next stray wheel event.
+  const lastScrollIndex = useRef(0)
+
+  useEffect(() => {
+    const el = trackRef.current
+    if (!el) return
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
+    // Same gate as the CSS below. Pinning is md+ only: the panel is a fixed
+    // ~836px tall on a phone, which only clears an 844px viewport — and
+    // mobile browser chrome shrinks that as you scroll, so the bottom of the
+    // card would be pinned out of reach. Phones keep the tappable deck.
+    const pinned = window.matchMedia('(min-width: 768px)')
+    const enabled = () => pinned.matches && !reduced.matches
+
+    let raf = 0
+    const sync = () => {
+      raf = 0
+      const distance = el.offsetHeight - window.innerHeight
+      if (distance <= 0) return
+      const progress = -el.getBoundingClientRect().top / distance
+      const i = Math.min(
+        PHASES.length - 1,
+        Math.max(0, Math.floor(progress * PHASES.length))
+      )
+      if (i !== lastScrollIndex.current) {
+        lastScrollIndex.current = i
+        setActive(i)
+        setFlipped(false)
+      }
+    }
+    const onScroll = () => {
+      if (enabled() && !raf) raf = requestAnimationFrame(sync)
+    }
+
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll)
+    pinned.addEventListener('change', onScroll)
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+      pinned.removeEventListener('change', onScroll)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [])
 
   // Depth 0 is the front of the deck. The active card always takes it; the
   // rest keep their relative order behind it.
@@ -61,8 +111,27 @@ export function PhaseDeck() {
   }
 
   return (
-    <div className="mt-10">
+    // Tall track + pinned panel: scrolling its length is what advances the
+    // deck. 220vh leaves ~40vh of travel per phase — enough to feel
+    // deliberate without holding the page hostage for three full screens.
+    // Under reduced motion the track collapses and the panel un-pins, so
+    // the section behaves like any other.
+    <div
+      ref={trackRef}
+      className="relative mt-10 md:h-[220vh] md:motion-reduce:h-auto"
+    >
       <PhaseDemoStyles />
+      <div className="flex flex-col justify-center md:sticky md:top-0 md:min-h-screen md:pt-[var(--nav-height)] md:motion-reduce:static md:motion-reduce:min-h-0 md:motion-reduce:pt-0">
+        <div className="mx-auto mb-8 max-w-[620px] text-center">
+          <span className="eyebrow">How it works</span>
+          <h2 className="mt-4 text-[clamp(26px,3.4vw,38px)] font-semibold tracking-[-0.025em]">
+            Three phases. One browser layer.
+          </h2>
+          <p className="mt-3.5 text-[16px] leading-relaxed text-foreground-secondary">
+            From instant form-fill to full automation — TaskPilot works in layers, each more
+            capable than the last.
+          </p>
+        </div>
 
       {/* Progression rail — Assist -> Understand -> Execute */}
       <div className="mb-7 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-2">
@@ -149,9 +218,10 @@ export function PhaseDeck() {
         })}
       </div>
 
-      <p className="mt-7 text-center text-[12.5px] text-foreground-tertiary md:mt-10">
-        Tap or click a card to bring it forward, then again to watch that phase run.
-      </p>
+        <p className="mt-7 text-center text-[12.5px] text-foreground-tertiary md:mt-10">
+          Scroll through the phases — or tap any card to watch it run.
+        </p>
+      </div>
     </div>
   )
 }

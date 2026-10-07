@@ -363,18 +363,11 @@ export default function LandingPage() {
       </header>
 
       {/* HOW IT WORKS */}
+      {/* The heading lives inside PhaseDeck so it pins with the deck —
+          left here it would scroll away the moment the deck took over. */}
       <section id="how" className="ui-section">
         <div className="ui-container">
-          <Reveal>
-            <div style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto' }}>
-              <span className="eyebrow">How it works</span>
-              <h2 style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 600, letterSpacing: '-0.025em', marginTop: 16 }}>Three phases. One browser layer.</h2>
-              <p style={{ marginTop: 14, fontSize: 16, color: 'var(--foreground-secondary)', lineHeight: 1.6 }}>From instant form-fill to full automation — TaskPilot works in layers, each more capable than the last.</p>
-            </div>
-          </Reveal>
-          <Reveal delay={1}>
-            <PhaseDeck />
-          </Reveal>
+          <PhaseDeck />
         </div>
       </section>
 
