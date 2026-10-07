@@ -34,6 +34,12 @@ import { PhaseDemo, PhaseDemoStyles } from './phase-demos'
 // offsets are sized so the deepest card's right edge still clears the
 // container: card width + 2 x offset has to fit the available width, or the
 // stack pushes the document sideways.
+// Unpinned scroll-driving: the slice of the deck's pass through the viewport
+// over which the three cards are dealt. Starting at 0.28 and spanning 0.44
+// keeps every switch inside the stretch where the deck is actually readable.
+const WINDOW_START = 0.28
+const WINDOW_SPAN = 0.44
+
 const SLOTS = [
   'translate-x-0 translate-y-0 scale-100',
   'translate-x-[18px] translate-y-[15px] scale-[0.965] md:translate-x-[38px] md:translate-y-[30px]',
@@ -55,19 +61,38 @@ export function PhaseDeck() {
     const el = trackRef.current
     if (!el) return
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
-    // Same gate as the CSS below. Pinning is md+ only: the panel is a fixed
+    // Same gate as the CSS below. PINNING is md+ only: the panel is a fixed
     // ~836px tall on a phone, which only clears an 844px viewport — and
     // mobile browser chrome shrinks that as you scroll, so the bottom of the
-    // card would be pinned out of reach. Phones keep the tappable deck.
+    // card would be pinned out of reach. The scroll-driven card switching
+    // itself runs everywhere; only how progress is measured differs.
     const pinned = window.matchMedia('(min-width: 768px)')
-    const enabled = () => pinned.matches && !reduced.matches
+    const enabled = () => !reduced.matches
 
     let raf = 0
     const sync = () => {
       raf = 0
-      const distance = el.offsetHeight - window.innerHeight
-      if (distance <= 0) return
-      const progress = -el.getBoundingClientRect().top / distance
+      let progress: number
+
+      if (pinned.matches) {
+        // Pinned: progress is how far through the tall track we've scrolled.
+        const distance = el.offsetHeight - window.innerHeight
+        if (distance <= 0) return
+        progress = -el.getBoundingClientRect().top / distance
+      } else {
+        // Unpinned (phones): the deck still advances, driven by its own
+        // travel up the viewport instead of by a pinned track. Nothing is
+        // held in place, so nothing can end up stranded off-screen.
+        const r = el.getBoundingClientRect()
+        const vh = window.innerHeight
+        // 0 when the deck's top reaches the bottom of the screen, 1 when its
+        // bottom leaves the top.
+        const travel = (vh - r.top) / (vh + r.height)
+        // Spend the switches on the middle of that pass, so cards don't flip
+        // while the deck is half off-screen at either end.
+        progress = (travel - WINDOW_START) / WINDOW_SPAN
+      }
+
       const i = Math.min(
         PHASES.length - 1,
         Math.max(0, Math.floor(progress * PHASES.length))
