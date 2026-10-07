@@ -33,7 +33,7 @@ export const FOUNDERS: Founder[] = [
     name: 'Mountaga Diallo',
     initials: 'MD',
     role: 'Co-founder & CEO',
-    bio: 'Founder and startup builder, based in Le Mans, France. Also behind Page2doc — turning web pages into clean spreadsheets, the same problem that grew into TaskPilot.',
+    bio: 'Founder and startup builder, based in Le Mans, France. Also behind Page2doc — turning web pages into clean spreadsheets, the same problem that grew into TaskPilot. Baccalauréat professionnel in commerce from Ecofac Business School.',
     href: 'https://www.linkedin.com/in/mountaga-diallo-0a7111268/',
     linkLabel: 'LinkedIn',
     photo: '/team/mountaga-diallo.jpg',
@@ -59,7 +59,7 @@ export function Founders() {
       {FOUNDERS.map((f) => (
         <div
           key={f.name}
-          className="rounded-xl border border-border bg-surface p-5 text-left"
+          className="flex flex-col rounded-xl border border-border bg-surface p-5 text-left"
         >
           <div className="flex items-center gap-3">
             {f.photo ? (
@@ -97,7 +97,7 @@ export function Founders() {
             href={f.href}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-3.5 inline-flex items-center gap-1 text-[12.5px] font-medium transition-opacity hover:opacity-80"
+            className="mt-auto inline-flex items-center gap-1 pt-3.5 text-[12.5px] font-medium transition-opacity hover:opacity-80"
             style={{ color: f.accent }}
           >
             {f.linkLabel}
