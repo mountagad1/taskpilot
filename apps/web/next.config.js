@@ -45,6 +45,19 @@ const nextConfig = {
     ]
   },
 
+  // L'API Fastify tourne ailleurs (Railway). On l'expose sous
+  // taskpilot.cc/api plutôt que sur un sous-domaine api.* : pas
+  // d'enregistrement DNS à créer, et le navigateur reste en same-origin,
+  // donc plus de préflight CORS pour l'extension et le dashboard.
+  //
+  // Tant que API_UPSTREAM n'est pas défini, aucune règle n'est émise et le
+  // site se comporte exactement comme avant.
+  async rewrites() {
+    const upstream = process.env.API_UPSTREAM?.replace(/\/+$/, '')
+    if (!upstream) return []
+    return [{ source: '/api/:path*', destination: `${upstream}/:path*` }]
+  },
+
   // Redirects
   async redirects() {
     return [

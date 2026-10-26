@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "TaskPilot \u2014 AI for Every Webpage",
+  "name": "TaskPilot — AI for Every Webpage",
   "short_name": "TaskPilot",
   "version": "1.0.0",
   "description": "Turn natural language into real browser actions. Fill forms, extract data, and run AI agents on any website.",
@@ -51,7 +51,7 @@
     "downloads"
   ],
   "host_permissions": [
-    "https://api.taskpilot.cc/*"
+    "https://taskpilot.cc/api/*"
   ],
   "optional_host_permissions": [
     "<all_urls>"
@@ -63,7 +63,7 @@
     ]
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.taskpilot.cc"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://taskpilot.cc/api"
   },
   "web_accessible_resources": [
     {

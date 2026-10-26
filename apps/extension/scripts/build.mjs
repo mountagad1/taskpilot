@@ -15,7 +15,7 @@ const isDev = process.argv.includes('--dev')
 // The API origin is baked in at build time. Reading it from storage instead
 // would let a compromised page repoint the extension at another server.
 const apiOrigin =
-  process.env.TASKPILOT_API_ORIGIN ?? (isDev ? 'http://localhost:4000' : 'https://api.taskpilot.cc')
+  process.env.TASKPILOT_API_ORIGIN ?? (isDev ? 'http://localhost:4000' : 'https://taskpilot.cc/api')
 
 // Where the user is sent for the dashboard, marketplace and sign-in. Since
 // the backend split this is a different host from the API.
