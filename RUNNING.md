@@ -107,7 +107,7 @@ filename order.
 # Local build — points at http://localhost:4000 / :3000
 pnpm --filter @taskpilot/extension build:dev
 
-# Production build — points at https://api.taskpilot.cc
+# Production build — points at https://taskpilot.cc/api
 pnpm --filter @taskpilot/extension build
 
 # Rebuild on every change
@@ -136,6 +136,14 @@ Then:
 1. Open `chrome://extensions`
 2. Turn on **Developer mode** (top right)
 3. **Load unpacked** → select `apps/extension/dist`
+
+> **"Could not load javascript 'content.js' for script" / "Could not load
+> manifest"** (French Chrome: *Impossible de charger le fichier JavaScript
+> 'content.js'*) means Chrome was pointed at `apps/extension` — the
+> TypeScript sources — or the build never ran. Chrome does not compile
+> TypeScript; `content.js`, `background.js`, `popup.js` and `options.js`
+> exist only in `dist/` after a successful build. Run the build, check the
+> last lines print the `dist` path, and load exactly that folder.
 
 The API origin is **baked in at build time**, not read from storage — a
 compromised page cannot repoint the extension at another server. The build

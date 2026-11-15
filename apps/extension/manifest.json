@@ -63,7 +63,7 @@
     ]
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://taskpilot.cc/api"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://taskpilot.cc"
   },
   "web_accessible_resources": [
     {
