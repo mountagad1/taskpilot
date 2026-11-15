@@ -8,7 +8,7 @@ a convenience.
 | Path | Contents |
 |---|---|
 | `schema.sql` | Full current schema |
-| `migrations/` | Seven ordered migrations |
+| `migrations/` | Eight ordered migrations |
 | `functions/` | Database functions (e.g. `notify_user`) |
 | `tests/` | RLS and migration tests |
 | `config.toml` | Supabase CLI configuration |
@@ -27,6 +27,7 @@ a convenience.
 | `005_teams.sql` | Teams, members, invites |
 | `006_platform.sql` | Keys, notifications, analytics |
 | `007_oauth.sql` | Integrations, encrypted tokens |
+| `008_security_hardening.sql` | Locks down direct PostgREST access: service-role-only RPCs, fixed `search_path`, `security_invoker` views, RLS on every table, column-level grants |
 
 Ordered and additive. Applying them in sequence to an empty database must
 produce `schema.sql`.
@@ -37,7 +38,13 @@ Every table carrying user or team data has policies restricting access to its
 owner. The application layer also checks, but RLS is what makes a forgotten
 `WHERE user_id = …` a bug rather than a breach.
 
-`tests/migrations.test.mjs` asserts this directly — 52 cases, including:
+The API itself uses the service-role key, which bypasses RLS. RLS and the
+grants in `008` are what protect the database from anyone calling PostgREST
+directly with the public anon key or a user's JWT — so a new table, view or
+`SECURITY DEFINER` function must follow the same rules (008 ends with a
+self-check that fails the migration otherwise).
+
+`tests/migrations.test.mjs` asserts this directly — 76 cases, including:
 
 - team members see their own team and not others'
 - one user cannot read another user's integration

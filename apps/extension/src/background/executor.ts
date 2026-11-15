@@ -20,6 +20,7 @@ import type {
   PlanStep,
   RunStatus,
 } from "@taskpilot/shared";
+import { effectiveConfirmSet, needsConfirmation } from "@taskpilot/shared";
 
 import { API_BASE, isAutomatable } from "../shared/config";
 import { sendToTab, type RunState, type RunUpdate } from "../shared/messages";
@@ -138,7 +139,9 @@ export class RunExecutor {
 
     // ── Execute ──
     const deadline = Date.now() + Math.min(created.limits.timeout_ms, 600_000);
-    const confirmSet = new Set(created.limits.confirm);
+    // Never trust the server's list alone: the platform minimum applies even
+    // if limits.confirm arrives empty (e.g. from a seller-written manifest).
+    const confirmSet = effectiveConfirmSet(created.limits.confirm ?? []);
     const scratchpad: Record<string, unknown> = {};
 
     try {
@@ -163,16 +166,26 @@ export class RunExecutor {
           return this.finish("completed", scratchpad);
         }
 
-        // Confirmation gate for anything that navigates or writes files.
-        if (confirmSet.has(step.action.type)) {
-          this.state.awaitingConfirmation = step;
-          this.state.status = "awaiting_confirmation";
-          this.deps.broadcast({ type: "RUN_CONFIRM", runId, step });
+        // Resolve {{…}} BEFORE the gate, so the user approves the URL that
+        // will actually be opened — not the template.
+        const action = interpolate(step.action, scratchpad);
 
-          const approved = await this.awaitConfirmation(runId, step);
+        // Confirmation gate for anything that navigates or writes files, and
+        // for any URL assembled from run data (see needsConfirmation).
+        if (needsConfirmation(step.action, confirmSet)) {
+          const resolvedStep: PlanStep = { ...step, action };
+          this.state.awaitingConfirmation = resolvedStep;
+          this.state.status = "awaiting_confirmation";
+          this.deps.broadcast({ type: "RUN_CONFIRM", runId, step: resolvedStep });
+
+          const approved = await this.awaitConfirmation(runId, resolvedStep, deadline);
           this.state.awaitingConfirmation = null;
           this.state.status = "running";
 
+          if (!approved && Date.now() > deadline) {
+            await this.reportStep(runId, index, { status: "skipped", error: "Confirmation timed out" });
+            return this.finish("timed_out", scratchpad, `No answer to the "${step.action.type}" confirmation in time`);
+          }
           if (!approved) {
             await this.reportStep(runId, index, { status: "skipped", error: "Declined by the user" });
             return this.finish("cancelled", scratchpad, `You declined the "${step.action.type}" step`);
@@ -182,7 +195,6 @@ export class RunExecutor {
         this.deps.broadcast({ type: "RUN_STEP", runId, index, step });
         await this.reportStep(runId, index, { status: "running" });
 
-        const action = interpolate(step.action, scratchpad);
         const result = await this.dispatch(options.tabId, action, step);
 
         this.state.results.push({
@@ -444,15 +456,22 @@ export class RunExecutor {
     }
   }
 
-  private awaitConfirmation(runId: string, step: PlanStep): Promise<boolean> {
+  /**
+   * Resolves with the user's answer, or `false` once the run's deadline
+   * passes — a closed popup must not leave the run (and the "already in
+   * progress" lock) hanging forever.
+   */
+  private awaitConfirmation(runId: string, step: PlanStep, deadline: number): Promise<boolean> {
     return new Promise((resolve) => {
-      this.pendingConfirmation = resolve;
-      void this.deps.requestConfirmation(runId, step).then((approved) => {
-        if (this.pendingConfirmation === resolve) {
-          this.pendingConfirmation = null;
-          resolve(approved);
-        }
-      });
+      const settle = (approved: boolean) => {
+        if (this.pendingConfirmation !== settle) return;
+        this.pendingConfirmation = null;
+        clearTimeout(timer);
+        resolve(approved);
+      };
+      const timer = setTimeout(() => settle(false), Math.max(0, deadline - Date.now()));
+      this.pendingConfirmation = settle;
+      void this.deps.requestConfirmation(runId, step).then(settle, () => settle(false));
     });
   }
 

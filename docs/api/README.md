@@ -1,6 +1,16 @@
 # TaskPilot API
 
-Base URL: `https://api.taskpilot.cc` · Discovery document: `GET /v1`
+Discovery document: `GET /v1`
+
+| Environment | Base URL | Example |
+|---|---|---|
+| Production | `https://taskpilot.cc/api` | `https://taskpilot.cc/api/v1/agents` |
+| Local API service | `http://localhost:4000` | `http://localhost:4000/v1/agents` |
+
+Every route lives under `/v1`; the API itself has no `/api` prefix. In
+production the web app forwards `https://taskpilot.cc/api/*` to the API
+service (`API_UPSTREAM`), which is where the `/api` comes from. All paths
+below are relative to the base URL.
 
 One surface serves the dashboard, the extension and third-party developers, so
 the documented API cannot drift from what the product actually does.
@@ -20,6 +30,8 @@ Authorization: Bearer eyJhbGciOi...            # user access token
 ```
 
 `X-API-Key: tp_live_…` works too. When both are presented the API key wins.
+There is no cookie authentication — a request without one of these headers
+reaches only the public endpoints.
 
 **API keys** are created at **Dashboard → Developers** (Pro and above). The
 secret is returned exactly once — only a SHA-256 digest is stored, so a
@@ -151,7 +163,7 @@ completed purchase first.
 | `DELETE` | `/v1/agents/{id}/install` | Uninstall |
 | `GET` | `/v1/agents/{id}/reviews` | Public |
 | `POST` | `/v1/agents/{id}/reviews` | Requires an install or purchase; one per user |
-| `GET` | `/v1/agents/{id}/manifest` | Owner, buyer or installer only |
+| `GET` | `/v1/agents/{id}/manifest` | Owner, buyer or installer only. `?version=` optional. Returns the bare manifest JSON (no `data` envelope) as an attachment |
 
 ---
 
@@ -224,6 +236,36 @@ not overwrite a recorded result.
 
 Only `listed` + `public` agents are ever returned.
 
+`GET /v1/marketplace/agents/{slug}` — public detail page for one listing.
+
+### `POST /v1/billing/checkout`
+
+```jsonc
+{ "agentId": "…" }   // agent_id is accepted too
+```
+
+Returns `{ "data": { "free": true } }` when the agent is free (it is granted
+immediately), or `{ "data": { "url": "https://checkout.stripe.com/…" } }` to
+send the buyer to. `409` if you already own it; `503 not_configured` when the
+deployment has no Stripe credentials.
+
+---
+
+## Exports
+
+### `POST /v1/exports`
+
+Requires `exports:write`.
+
+```jsonc
+{ "format": "csv", "data": [ { "name": "Ada", "email": "ada@example.com" } ],
+  "filename": "contacts", "headers": ["name", "email"] }
+```
+
+`format` is `csv`, `json` or `excel`. The response **is the file** — no
+`data` envelope — served with `Content-Disposition: attachment`: `text/csv`,
+`application/json` (the rows array) or an `.xlsx` workbook.
+
 ---
 
 ## Workflows
@@ -273,8 +315,12 @@ Session credential only. Returns the consent URL to send the browser to.
 // Response
 { "data": { "authorize_url": "https://app.hubspot.com/oauth/authorize?…",
             "state": "…", "expires_in": 600,
-            "redirect_uri": "https://api.taskpilot.cc/v1/integrations/hubspot/callback" } }
+            "redirect_uri": "https://taskpilot.cc/api/v1/integrations/hubspot/callback" } }
 ```
+
+The redirect URI is built from `OAUTH_REDIRECT_BASE_URL`, else
+`PUBLIC_API_URL`, else `http://localhost:4000`, plus
+`/v1/integrations/{provider}/callback`.
 
 `return_to` is validated against the dashboard origin. A foreign origin is
 dropped rather than honoured — reflecting it would make this an open
@@ -354,8 +400,9 @@ into a full team even under a race.
 is no user behind a cron tick. Set `WORKER_SECRET` to enable it.
 
 ```bash
-curl -X POST https://api.taskpilot.cc/v1/jobs/worker \
+curl -X POST https://taskpilot.cc/api/v1/jobs/worker \
   -H "X-Worker-Secret: $WORKER_SECRET"
+# local: curl -X POST http://localhost:4000/v1/jobs/worker -H "X-Worker-Secret: $WORKER_SECRET"
 ```
 
 Jobs are claimed with `FOR UPDATE SKIP LOCKED`, so several workers can poll

@@ -20,6 +20,7 @@ import {
   capabilitiesForPlan,
   gateCapabilities,
   type RunStatus,
+  withPlatformConfirm,
 } from "@taskpilot/shared";
 import { Planner, providerRouterFromEnv } from "../runtime";
 
@@ -160,7 +161,11 @@ export async function createRun(caller: Caller, input: CreateRunInput): Promise<
       max_steps: Math.min(resolved.manifest.harness.max_steps, DEFAULT_RUN_LIMITS.max_steps * 4),
       token_budget: resolved.manifest.harness.token_budget_per_run,
       timeout_ms: resolved.manifest.harness.timeout_ms,
-      confirm: resolved.manifest.harness.require_confirmation,
+      // Manifest may add to the platform minimum, never shrink it.
+      confirm: withPlatformConfirm([
+        ...DEFAULT_RUN_LIMITS.confirm,
+        ...resolved.manifest.harness.require_confirmation,
+      ]),
     };
   }
 

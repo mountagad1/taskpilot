@@ -216,12 +216,15 @@ function Authentication() {
       </div>
       <CodeBlock
         code={`new TaskPilot({ apiKey: 'tp_live_...' })           // explicit
-new TaskPilot()                                     // reads TASKPILOT_API_KEY
-new TaskPilot({ baseUrl: 'http://localhost:4000' }) // point at a local API`}
+new TaskPilot()                                     // reads TASKPILOT_API_KEY / TASKPILOT_BASE_URL
+new TaskPilot({ baseUrl: 'http://localhost:4000' }) // point at a local API
+// default baseUrl: https://taskpilot.cc/api  (the client appends /v1/...)`}
       />
       <P>
-        In a browser where the user is already signed in, omit the key entirely — the client sends
-        their session instead.
+        The credential is always sent as <code style={inlineCode}>Authorization: Bearer …</code>{' '}
+        — there is no cookie authentication, so the client never sends cookies. In a browser, pass
+        the signed-in user&apos;s access token as <code style={inlineCode}>apiKey</code>; without
+        any token only public endpoints such as marketplace browsing work.
       </P>
     </Section>
   )
@@ -332,7 +335,11 @@ function RunningAgents() {
       <P>
         Runs are planned on the server and executed in the user&apos;s browser, so the backend
         never holds their session cookies. <code style={inlineCode}>start()</code> returns the
-        plan; the extension carries it out and reports back.
+        plan; an executor carries it out and reports back. The extension executes the runs it
+        starts itself — for a run started from your own script, executing the plan and reporting
+        with <code style={inlineCode}>runs().reportStep()</code> /{' '}
+        <code style={inlineCode}>runs().complete()</code> is up to you, or{' '}
+        <code style={inlineCode}>watch()</code> will time out.
       </P>
       <CodeBlock
         code={`const { run, plan } = await taskpilot.start({
@@ -416,7 +423,10 @@ function FullReference() {
     <Section id="reference" title="Full reference">
       <P>
         Every namespace on the client, and the REST surface it wraps. Base URL:{' '}
-        <code style={inlineCode}>https://api.taskpilot.cc</code> · discovery document:{' '}
+        <code style={inlineCode}>https://taskpilot.cc/api</code> (local:{' '}
+        <code style={inlineCode}>http://localhost:4000</code>), with every route under{' '}
+        <code style={inlineCode}>/v1</code> — e.g.{' '}
+        <code style={inlineCode}>https://taskpilot.cc/api/v1/agents</code> · discovery document:{' '}
         <code style={inlineCode}>GET /v1</code>.
       </P>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

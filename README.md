@@ -102,7 +102,7 @@ loading the extension, testing, deploying, and troubleshooting.
 pnpm dev:api        # backend in watch mode
 pnpm dev:web        # frontend in watch mode
 pnpm build          # production build of everything
-pnpm test           # 289 tests across 14 files
+pnpm test           # 463 tests across 21 files
 pnpm type-check     # all 8 packages
 pnpm worker         # background job ticker
 ```
@@ -197,7 +197,7 @@ concurrently without collisions. Failures retry with exponential backoff, then
 park as `dead`. Jobs abandoned by a crashed worker are requeued after 15 minutes.
 
 ```bash
-curl -X POST https://api.taskpilot.cc/v1/jobs/worker -H "X-Worker-Secret: $WORKER_SECRET"
+curl -X POST https://taskpilot.cc/api/v1/jobs/worker -H "X-Worker-Secret: $WORKER_SECRET"
 ```
 
 Point any scheduler at it. Set `WORKER_SECRET` to enable the endpoint — without

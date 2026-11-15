@@ -172,6 +172,7 @@ export const DEFAULT_HARNESS: AgentHarness = {
   timeout_ms: 120_000,
   memory: { namespace: "default", ttl_hours: 24, enabled: true },
   // Anything that leaves the page or touches the filesystem is confirmed
-  // by default — an agent should never silently navigate or download.
-  require_confirmation: ["navigate", "download_file", "upload_file"],
+  // by default — an agent should never silently navigate or download. This
+  // must stay a superset of PLATFORM_CONFIRM (confirmation.ts).
+  require_confirmation: ["navigate", "download_file", "upload_file", "push_integration"],
 };

@@ -72,6 +72,26 @@ export function getAdminClient(): SupabaseClient {
   return adminSingleton;
 }
 
+/**
+ * A fresh, throwaway Supabase client for calls that CREATE a user session:
+ * sign-up, sign-in, refresh (and password-reset mail, for consistency).
+ *
+ * Never run those on `getAdminClient()`. supabase-js keeps the session such a
+ * call returns in memory — `persistSession: false` only means "not in
+ * localStorage" — and from then on sends that user's access token instead of
+ * the service key on every PostgREST request. On the shared singleton, the
+ * first login would silently turn every later "admin" query in the process
+ * into a query running as that user, under RLS.
+ *
+ * One client per call means the session dies with the request.
+ */
+export function createAuthClient(): SupabaseClient {
+  return createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    realtime: { transport: WebSocket as unknown as never },
+  });
+}
+
 /** True when the deployment has the credentials a feature needs. */
 export function hasStripeCredentials(): boolean {
   return Boolean(process.env.STRIPE_SECRET_KEY);

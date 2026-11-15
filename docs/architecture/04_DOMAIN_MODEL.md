@@ -1,6 +1,6 @@
 # 04 · Domain Model
 
-Schema lives in `services/api/db/schema.sql`, applied through seven ordered
+Schema lives in `services/api/db/schema.sql`, applied through eight ordered
 migrations in `services/api/db/migrations/`. Full reference:
 [database/](../database/).
 

@@ -50,6 +50,7 @@ describe('migrations apply', () => {
       '005_teams.sql',
       '006_platform.sql',
       '007_oauth.sql',
+      '008_security_hardening.sql',
     ])
   })
 
@@ -824,5 +825,656 @@ describe('integration_connections view', () => {
       db.query(`SELECT workspace_name FROM integration_connections`)
     )
     expect(theirs.rows).toHaveLength(0)
+  })
+})
+
+// ─── SECURITY HARDENING (008) ────────────────────────────────
+//
+// The API only ever uses the service role, so everything below is about the
+// other door: PostgREST with the public anon key or a user's own JWT. The
+// harness grants exactly what Supabase grants by default, so a hole closed
+// here is closed in production.
+
+describe('security hardening (008)', () => {
+  const DENIED = /permission denied/i
+  const RLS = /row-level security/i
+
+  let carol
+
+  beforeAll(async () => {
+    carol = await newUser('carol-008@example.com')
+  })
+
+  async function agent(slug, { owner = null, price = 0, status = 'listed' } = {}) {
+    const { rows } = await db.query(
+      `INSERT INTO marketplace_agents (slug, name, category, goal, status, price_cents, owner_id)
+       VALUES ($1, $1, 'automation', 'x', $2, $3, $4) RETURNING id`,
+      [slug, status, price, owner]
+    )
+    return rows[0].id
+  }
+
+  /** Runs `fn` as the superuser but with a user identity in the JWT claim. */
+  async function withIdentity(userId, fn) {
+    await db.query(`SELECT set_config('request.jwt.claim.sub', $1, false)`, [userId])
+    try {
+      return await fn()
+    } finally {
+      await db.query(`SELECT set_config('request.jwt.claim.sub', '', false)`)
+    }
+  }
+
+  // ── 1. SECURITY DEFINER functions ─────────────────────────
+
+  describe('definer functions', () => {
+    const SERVICE_ONLY = [
+      'publish_agent_version(uuid,text,jsonb,text,uuid)',
+      'increment_agent_installs(uuid)',
+      'increment_agent_runs(uuid)',
+      'increment_agent_sales(uuid)',
+      'notify_user(uuid,notification_type,text,text,text,jsonb)',
+      'mark_notifications_read(uuid)',
+      'team_role_of(uuid,uuid)',
+      'reset_monthly_usage()',
+      'claim_jobs(text,integer)',
+      'complete_job(uuid)',
+      'fail_job(uuid,text)',
+      'requeue_stalled_jobs(integer)',
+      'purge_expired_oauth_states()',
+    ]
+
+    it('pins search_path on every SECURITY DEFINER function', async () => {
+      const { rows } = await db.query(
+        `SELECT p.oid::regprocedure::text AS fn
+           FROM pg_proc p
+          WHERE p.pronamespace = 'public'::regnamespace
+            AND p.prosecdef
+            AND NOT EXISTS (
+              SELECT 1 FROM unnest(COALESCE(p.proconfig, '{}')) c WHERE c LIKE 'search_path=%'
+            )`
+      )
+      expect(rows.map((r) => r.fn)).toEqual([])
+    })
+
+    it('makes the RPCs executable by the service role only', async () => {
+      for (const fn of SERVICE_ONLY) {
+        const { rows } = await db.query(
+          `SELECT has_function_privilege('anon', $1, 'EXECUTE') AS anon,
+                  has_function_privilege('authenticated', $1, 'EXECUTE') AS authed,
+                  has_function_privilege('service_role', $1, 'EXECUTE') AS service`,
+          [fn]
+        )
+        expect(rows[0], fn).toEqual({ anon: false, authed: false, service: true })
+      }
+    })
+
+    it("stops a user replacing another owner's current manifest", async () => {
+      const agentId = await agent('sec-publish-victim', { owner: alice })
+      await db.query(`SELECT publish_agent_version($1, '1.0.0', '{"genuine":true}'::jsonb)`, [agentId])
+
+      await expect(
+        as(bob, () =>
+          db.query(`SELECT publish_agent_version($1, '9.9.9', '{"evil":true}'::jsonb)`, [agentId])
+        )
+      ).rejects.toThrow(DENIED)
+      await expect(
+        as(null, () =>
+          db.query(`SELECT publish_agent_version($1, '9.9.9', '{"evil":true}'::jsonb)`, [agentId])
+        )
+      ).rejects.toThrow(DENIED)
+
+      const { rows } = await db.query(
+        `SELECT version, manifest FROM agent_versions WHERE agent_id = $1 AND is_current`,
+        [agentId]
+      )
+      expect(rows).toEqual([{ version: '1.0.0', manifest: { genuine: true } }])
+    })
+
+    it('refuses a publish that carries a non-owner identity, and records the real author', async () => {
+      const agentId = await agent('sec-publish-identity', { owner: alice })
+
+      // Defence in depth inside the function, for any caller that still has
+      // EXECUTE but acts as a user.
+      await expect(
+        withIdentity(bob, () =>
+          db.query(`SELECT publish_agent_version($1, '1.0.0', '{}'::jsonb)`, [agentId])
+        )
+      ).rejects.toThrow(/only the owner/i)
+
+      await withIdentity(alice, () =>
+        db.query(`SELECT publish_agent_version($1, '1.0.0', '{}'::jsonb, NULL, $2)`, [agentId, bob])
+      )
+      const { rows } = await db.query(
+        `SELECT created_by FROM agent_versions WHERE agent_id = $1 AND is_current`,
+        [agentId]
+      )
+      expect(rows[0].created_by).toBe(alice)
+    })
+
+    it('stops users minting notifications, clearing others, or bumping counters', async () => {
+      const agentId = await agent('sec-counter')
+      await expect(
+        as(bob, () => db.query(`SELECT notify_user($1,'subscription','Payment received')`, [alice]))
+      ).rejects.toThrow(DENIED)
+      await expect(
+        as(bob, () => db.query(`SELECT mark_notifications_read($1)`, [alice]))
+      ).rejects.toThrow(DENIED)
+      await expect(
+        as(bob, () => db.query(`SELECT increment_agent_installs($1)`, [agentId]))
+      ).rejects.toThrow(DENIED)
+      await expect(
+        as(null, () => db.query(`SELECT increment_agent_runs($1)`, [agentId]))
+      ).rejects.toThrow(DENIED)
+      await expect(
+        as(bob, () => db.query(`SELECT * FROM claim_jobs('evil', 100)`))
+      ).rejects.toThrow(DENIED)
+    })
+
+    it('keeps every RPC the API calls working for the service role', async () => {
+      const agentId = await agent('sec-service-rpc', { owner: alice })
+
+      await db.asServiceRole(async () => {
+        const published = await db.query(
+          `SELECT publish_agent_version($1, '2.0.0', '{"ok":true}'::jsonb, 'note', $2) AS id`,
+          [agentId, alice]
+        )
+        expect(published.rows[0].id).toBeTruthy()
+
+        await db.query(`SELECT increment_agent_installs($1)`, [agentId])
+        await db.query(`SELECT increment_agent_runs($1)`, [agentId])
+        await db.query(`SELECT increment_agent_sales($1)`, [agentId])
+        await db.query(`SELECT notify_user($1,'system','From the service')`, [carol])
+        const marked = await db.query(`SELECT mark_notifications_read($1) AS n`, [carol])
+        expect(marked.rows[0].n).toBe(1)
+        await db.query(`SELECT * FROM claim_jobs('svc', 1)`)
+        await db.query(`SELECT requeue_stalled_jobs(15)`)
+        await db.query(`SELECT purge_expired_oauth_states()`)
+      })
+
+      const { rows } = await db.query(
+        `SELECT a.version, a.install_count, a.run_count, a.sales_count, v.created_by
+           FROM marketplace_agents a JOIN agent_versions v ON v.agent_id = a.id AND v.is_current
+          WHERE a.id = $1`,
+        [agentId]
+      )
+      expect(rows[0]).toEqual({
+        version: '2.0.0', install_count: 1, run_count: 1, sales_count: 1, created_by: alice,
+      })
+    })
+
+    it('answers membership questions only about the caller', async () => {
+      const { rows } = await db.query(
+        `INSERT INTO teams (name, slug, owner_id) VALUES ('Oracle','sec-oracle',$1) RETURNING id`,
+        [alice]
+      )
+      const teamId = rows[0].id
+
+      const outsider = await as(carol, () =>
+        db.query(`SELECT is_team_member($1,$2) AS m, can_manage_team($1,$2) AS c`, [teamId, alice])
+      )
+      expect(outsider.rows[0]).toEqual({ m: false, c: false })
+
+      const self = await as(alice, () =>
+        db.query(`SELECT is_team_member($1,$2) AS m, can_manage_team($1,$2) AS c`, [teamId, alice])
+      )
+      expect(self.rows[0]).toEqual({ m: true, c: true })
+
+      await expect(
+        as(null, () => db.query(`SELECT is_team_member($1,$2)`, [teamId, alice]))
+      ).rejects.toThrow(DENIED)
+    })
+  })
+
+  // ── 2. Analytics views ───────────────────────────────────
+
+  describe('analytics views', () => {
+    it('runs every view in public with invoker rights', async () => {
+      const { rows } = await db.query(
+        `SELECT c.relname, c.reloptions::text AS opts
+           FROM pg_class c
+          WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'v'
+          ORDER BY c.relname`
+      )
+      expect(rows.map((r) => r.relname)).toEqual(
+        expect.arrayContaining(['v_agent_performance', 'v_daily_stats', 'v_run_daily_stats', 'v_user_ltv'])
+      )
+      for (const row of rows) {
+        expect(row.opts, row.relname).toMatch(/security_invoker=(true|on)/)
+      }
+    })
+
+    it('hides the platform-wide KPI views from end users entirely', async () => {
+      for (const view of ['v_user_ltv', 'v_daily_stats']) {
+        await expect(as(alice, () => db.query(`SELECT * FROM ${view}`)), view).rejects.toThrow(DENIED)
+        await expect(as(null, () => db.query(`SELECT * FROM ${view}`)), view).rejects.toThrow(DENIED)
+      }
+
+      const ltv = await db.asServiceRole(() =>
+        db.query(`SELECT COUNT(DISTINCT id)::int AS n FROM v_user_ltv`)
+      )
+      expect(ltv.rows[0].n).toBeGreaterThan(1)
+    })
+
+    it("scopes the per-user views to the caller's own runs", async () => {
+      const agentId = await agent('sec-view-perf')
+      await db.query(
+        `INSERT INTO agent_runs (user_id, agent_id, goal, status) VALUES
+           ($1,$3,'alice run','completed'), ($2,$3,'bob run','failed')`,
+        [alice, bob, agentId]
+      )
+
+      const daily = await as(bob, () => db.query(`SELECT DISTINCT user_id FROM v_run_daily_stats`))
+      expect(daily.rows.map((r) => r.user_id)).toEqual([bob])
+
+      const perf = await as(bob, () =>
+        db.query(`SELECT total_runs::int AS n FROM v_agent_performance WHERE agent_id = $1`, [agentId])
+      )
+      // Only bob's own run is counted; alice's is invisible to him.
+      expect(perf.rows[0].n).toBe(1)
+
+      await expect(as(null, () => db.query(`SELECT * FROM v_run_daily_stats`))).rejects.toThrow(DENIED)
+    })
+  })
+
+  // ── 3. Tables that never had RLS ─────────────────────────
+
+  describe('tables without RLS', () => {
+    it('leaves no table in public without row level security', async () => {
+      const { rows } = await db.query(
+        `SELECT relname FROM pg_class
+          WHERE relnamespace = 'public'::regnamespace AND relkind IN ('r','p') AND NOT relrowsecurity`
+      )
+      expect(rows.map((r) => r.relname)).toEqual([])
+    })
+
+    it('keeps billing, sessions, referrals and the cache service-only', async () => {
+      await db.query(
+        `INSERT INTO billing_events (user_id, stripe_event_id, event_type, amount)
+         VALUES ($1, 'evt_sec_008', 'invoice.paid', 1900)`,
+        [alice]
+      )
+      await db.query(`INSERT INTO anonymous_sessions (fingerprint) VALUES ('fp-sec-008')`)
+
+      for (const table of ['billing_events', 'anonymous_sessions', 'referrals', 'response_cache']) {
+        await expect(as(alice, () => db.query(`SELECT * FROM ${table}`)), table).rejects.toThrow(DENIED)
+        await expect(as(null, () => db.query(`SELECT * FROM ${table}`)), table).rejects.toThrow(DENIED)
+      }
+      // A visitor resetting their own trial counter.
+      await expect(
+        as(null, () => db.query(`UPDATE anonymous_sessions SET actions_used = 0`))
+      ).rejects.toThrow(DENIED)
+      // Cache poisoning.
+      await expect(
+        as(bob, () =>
+          db.query(
+            `INSERT INTO response_cache (cache_key, response, expires_at)
+             VALUES ('k', '{"evil":true}', NOW() + INTERVAL '1 day')`
+          )
+        )
+      ).rejects.toThrow(DENIED)
+
+      const svc = await db.asServiceRole(() =>
+        db.query(`SELECT event_type FROM billing_events WHERE stripe_event_id = 'evt_sec_008'`)
+      )
+      expect(svc.rows).toEqual([{ event_type: 'invoice.paid' }])
+    })
+
+    it('does not let anyone write usage rows attributed to another user', async () => {
+      await expect(
+        as(null, () =>
+          db.query(`INSERT INTO ai_requests (user_id, task_type, cost_usd) VALUES ($1,'summarize',99)`, [alice])
+        )
+      ).rejects.toThrow(DENIED)
+      await expect(
+        as(bob, () =>
+          db.query(`INSERT INTO ai_requests (user_id, task_type, cost_usd) VALUES ($1,'summarize',99)`, [alice])
+        )
+      ).rejects.toThrow(DENIED)
+    })
+  })
+
+  // ── 4. Column-level holes ────────────────────────────────
+
+  describe('column-level restrictions', () => {
+    it('lets a user edit cosmetic profile fields but not plan, email or billing ids', async () => {
+      for (const assignment of [
+        `plan = 'enterprise'`,
+        `email = 'hijack@example.com'`,
+        `stripe_customer_id = 'cus_someone_else'`,
+        `referred_by = '${bob}'`,
+      ]) {
+        await expect(
+          as(alice, () => db.query(`UPDATE profiles SET ${assignment} WHERE id = $1`, [alice])),
+          assignment
+        ).rejects.toThrow(DENIED)
+      }
+
+      const renamed = await as(alice, () =>
+        db.query(
+          `UPDATE profiles SET name = 'Alice A.', timezone = 'Europe/Paris' WHERE id = $1 RETURNING name`,
+          [alice]
+        )
+      )
+      expect(renamed.rows).toEqual([{ name: 'Alice A.' }])
+
+      // Still row-scoped: bob cannot rename alice.
+      const cross = await as(bob, () =>
+        db.query(`UPDATE profiles SET name = 'pwned' WHERE id = $1 RETURNING id`, [alice])
+      )
+      expect(cross.rows).toHaveLength(0)
+
+      const { rows } = await db.query(`SELECT plan, name FROM profiles WHERE id = $1`, [alice])
+      expect(rows[0]).toEqual({ plan: 'free', name: 'Alice A.' })
+    })
+
+    it('does not let a user grant themselves an install (the entitlement) of a paid agent', async () => {
+      const agentId = await agent('sec-paid-install', { price: 4900 })
+
+      await expect(
+        as(bob, () =>
+          db.query(`INSERT INTO agent_installs (agent_id, user_id, version) VALUES ($1,$2,'1.0.0')`, [agentId, bob])
+        )
+      ).rejects.toThrow(DENIED)
+
+      // The API creates it after checking the purchase.
+      await db.asServiceRole(() =>
+        db.query(`INSERT INTO agent_installs (agent_id, user_id, version) VALUES ($1,$2,'1.0.0')`, [agentId, bob])
+      )
+
+      const mine = await as(bob, () =>
+        db.query(`SELECT agent_id FROM agent_installs WHERE agent_id = $1`, [agentId])
+      )
+      expect(mine.rows).toHaveLength(1)
+      const theirs = await as(alice, () =>
+        db.query(`SELECT agent_id FROM agent_installs WHERE agent_id = $1`, [agentId])
+      )
+      expect(theirs.rows).toHaveLength(0)
+
+      await expect(
+        as(bob, () => db.query(`UPDATE agent_installs SET agent_id = agent_id WHERE agent_id = $1`, [agentId]))
+      ).rejects.toThrow(DENIED)
+
+      // Uninstalling your own copy is still allowed.
+      const removed = await as(bob, () =>
+        db.query(`DELETE FROM agent_installs WHERE agent_id = $1 RETURNING id`, [agentId])
+      )
+      expect(removed.rows).toHaveLength(1)
+    })
+
+    it('stops users deleting, rewriting or back-dating runs to reset their quota', async () => {
+      const { rows } = await db.query(
+        `INSERT INTO agent_runs (user_id, goal, status, cost_usd)
+         VALUES ($1,'billable','completed',1.5) RETURNING id`,
+        [carol]
+      )
+      const runId = rows[0].id
+
+      await expect(
+        as(carol, () => db.query(`DELETE FROM agent_runs WHERE id = $1`, [runId]))
+      ).rejects.toThrow(DENIED)
+      await expect(
+        as(carol, () =>
+          db.query(`UPDATE agent_runs SET started_at = NOW() - INTERVAL '90 days' WHERE id = $1`, [runId])
+        )
+      ).rejects.toThrow(DENIED)
+      await expect(
+        as(carol, () => db.query(`UPDATE agent_runs SET cost_usd = 0 WHERE id = $1`, [runId]))
+      ).rejects.toThrow(DENIED)
+      await expect(
+        as(carol, () =>
+          db.query(
+            `INSERT INTO agent_runs (user_id, goal, started_at) VALUES ($1,'old', NOW() - INTERVAL '90 days')`,
+            [carol]
+          )
+        )
+      ).rejects.toThrow(DENIED)
+
+      const still = await db.query(`SELECT cost_usd::float AS c FROM agent_runs WHERE id = $1`, [runId])
+      expect(still.rows[0].c).toBe(1.5)
+    })
+
+    it('stops a team admin taking ownership, seats or plan', async () => {
+      const { rows } = await db.query(
+        `INSERT INTO teams (name, slug, owner_id, seats) VALUES ('Coup','sec-coup',$1,5) RETURNING id`,
+        [alice]
+      )
+      const teamId = rows[0].id
+      await db.query(`INSERT INTO team_members (team_id, user_id, role) VALUES ($1,$2,'admin')`, [teamId, bob])
+
+      for (const assignment of [`owner_id = '${bob}'`, 'seats = 500', `plan = 'enterprise'`]) {
+        await expect(
+          as(bob, () => db.query(`UPDATE teams SET ${assignment} WHERE id = $1`, [teamId])),
+          assignment
+        ).rejects.toThrow(DENIED)
+      }
+
+      // Admins still manage the team's own details.
+      const renamed = await as(bob, () =>
+        db.query(`UPDATE teams SET name = 'Coup Inc' WHERE id = $1 RETURNING name`, [teamId])
+      )
+      expect(renamed.rows).toEqual([{ name: 'Coup Inc' }])
+
+      // Promote self to owner.
+      await expect(
+        as(bob, () =>
+          db.query(`UPDATE team_members SET role = 'owner' WHERE team_id = $1 AND user_id = $2`, [teamId, bob])
+        )
+      ).rejects.toThrow(RLS)
+
+      // Demote or remove the real owner: the owner row is out of reach.
+      const demoted = await as(bob, () =>
+        db.query(
+          `UPDATE team_members SET role = 'viewer' WHERE team_id = $1 AND user_id = $2 RETURNING id`,
+          [teamId, alice]
+        )
+      )
+      expect(demoted.rows).toHaveLength(0)
+      const removed = await as(bob, () =>
+        db.query(`DELETE FROM team_members WHERE team_id = $1 AND user_id = $2 RETURNING id`, [teamId, alice])
+      )
+      expect(removed.rows).toHaveLength(0)
+
+      // Mint a second owner, directly or by invitation.
+      await expect(
+        as(bob, () =>
+          db.query(`INSERT INTO team_members (team_id, user_id, role) VALUES ($1,$2,'owner')`, [teamId, carol])
+        )
+      ).rejects.toThrow(RLS)
+      await expect(
+        as(bob, () =>
+          db.query(
+            `INSERT INTO team_invites (team_id, email, role) VALUES ($1,'sock@example.com','owner')`,
+            [teamId]
+          )
+        )
+      ).rejects.toThrow(RLS)
+
+      // Moving a member row to another team.
+      await expect(
+        as(bob, () => db.query(`UPDATE team_members SET team_id = team_id WHERE team_id = $1`, [teamId]))
+      ).rejects.toThrow(DENIED)
+
+      // Ordinary admin work still works.
+      const invited = await as(bob, () =>
+        db.query(
+          `INSERT INTO team_invites (team_id, email, role) VALUES ($1,'new-008@example.com','member') RETURNING role`,
+          [teamId]
+        )
+      )
+      expect(invited.rows).toEqual([{ role: 'member' }])
+
+      const { rows: members } = await db.query(
+        `SELECT user_id, role FROM team_members WHERE team_id = $1 ORDER BY role`,
+        [teamId]
+      )
+      expect(members).toEqual([
+        { user_id: alice, role: 'owner' },
+        { user_id: bob, role: 'admin' },
+      ])
+      const team = await db.query(`SELECT owner_id, seats, plan FROM teams WHERE id = $1`, [teamId])
+      expect(team.rows[0]).toEqual({ owner_id: alice, seats: 5, plan: 'free' })
+    })
+
+    it('does not let a user create a team with a paid plan or extra seats', async () => {
+      await expect(
+        as(carol, () =>
+          db.query(
+            `INSERT INTO teams (name, slug, owner_id, plan, seats)
+             VALUES ('Free lunch','sec-lunch',$1,'enterprise',999)`,
+            [carol]
+          )
+        )
+      ).rejects.toThrow(DENIED)
+    })
+
+    it('stops a user un-revoking, re-scoping or reading the hash of an API key', async () => {
+      const { rows } = await db.query(
+        `INSERT INTO api_keys (user_id, name, key_prefix, key_hash, scopes, revoked_at)
+         VALUES ($1,'old key','tp_live_abc','hash-sec-008','{read}', NOW()) RETURNING id`,
+        [alice]
+      )
+      const keyId = rows[0].id
+
+      await expect(
+        as(alice, () => db.query(`UPDATE api_keys SET revoked_at = NULL WHERE id = $1`, [keyId]))
+      ).rejects.toThrow(DENIED)
+      await expect(
+        as(alice, () => db.query(`UPDATE api_keys SET scopes = '{admin}' WHERE id = $1`, [keyId]))
+      ).rejects.toThrow(DENIED)
+      await expect(
+        as(alice, () => db.query(`SELECT key_hash FROM api_keys WHERE id = $1`, [keyId]))
+      ).rejects.toThrow(DENIED)
+
+      const listed = await as(alice, () =>
+        db.query(`SELECT name, key_prefix FROM api_keys WHERE id = $1`, [keyId])
+      )
+      expect(listed.rows).toEqual([{ name: 'old key', key_prefix: 'tp_live_abc' }])
+
+      const { rows: still } = await db.query(`SELECT revoked_at FROM api_keys WHERE id = $1`, [keyId])
+      expect(still[0].revoked_at).not.toBeNull()
+
+      const deleted = await as(alice, () =>
+        db.query(`DELETE FROM api_keys WHERE id = $1 RETURNING id`, [keyId])
+      )
+      expect(deleted.rows).toHaveLength(1)
+    })
+
+    it('stops an agent owner faking ratings, counters, status or manifests', async () => {
+      const agentId = await agent('sec-owner-fake', { owner: carol, status: 'suspended' })
+
+      for (const assignment of [
+        'rating_avg = 5', 'rating_count = 1000', 'install_count = 1000', 'sales_count = 1000',
+        `status = 'listed'`, `version = '9.9.9'`,
+      ]) {
+        await expect(
+          as(carol, () => db.query(`UPDATE marketplace_agents SET ${assignment} WHERE id = $1`, [agentId])),
+          assignment
+        ).rejects.toThrow(DENIED)
+      }
+      await expect(
+        as(carol, () =>
+          db.query(
+            `INSERT INTO marketplace_agents (slug, name, owner_id, status, rating_avg)
+             VALUES ('sec-fake-new','x',$1,'listed',5)`,
+            [carol]
+          )
+        )
+      ).rejects.toThrow(DENIED)
+      await expect(
+        as(carol, () =>
+          db.query(`INSERT INTO agent_versions (agent_id, version, manifest) VALUES ($1,'2.0.0','{}')`, [agentId])
+        )
+      ).rejects.toThrow(DENIED)
+
+      const edited = await as(carol, () =>
+        db.query(`UPDATE marketplace_agents SET tagline = 'better' WHERE id = $1 RETURNING tagline`, [agentId])
+      )
+      expect(edited.rows).toEqual([{ tagline: 'better' }])
+
+      const created = await as(carol, () =>
+        db.query(
+          `INSERT INTO marketplace_agents (slug, name, owner_id) VALUES ('sec-owner-new','New',$1) RETURNING status`,
+          [carol]
+        )
+      )
+      expect(created.rows).toEqual([{ status: 'draft' }])
+    })
+
+    it('keeps integration tokens out of reach of the owning user', async () => {
+      const owner = await newUser('sec-token-owner@example.com')
+      await db.query(
+        `INSERT INTO integrations (user_id, provider, access_token, refresh_token) VALUES ($1,'hubspot','ct','rt')`,
+        [owner]
+      )
+      for (const column of ['access_token', 'refresh_token', 'metadata', '*']) {
+        await expect(
+          as(owner, () => db.query(`SELECT ${column} FROM integrations`)),
+          column
+        ).rejects.toThrow(DENIED)
+      }
+      await expect(
+        as(owner, () =>
+          db.query(`INSERT INTO integrations (user_id, provider, access_token) VALUES ($1,'notion','x')`, [owner])
+        )
+      ).rejects.toThrow(DENIED)
+
+      const view = await as(owner, () =>
+        db.query(`SELECT provider, needs_reconnect FROM integration_connections`)
+      )
+      expect(view.rows).toEqual([{ provider: 'hubspot', needs_reconnect: false }])
+
+      const disconnected = await as(owner, () => db.query(`DELETE FROM integrations RETURNING provider`))
+      expect(disconnected.rows).toHaveLength(1)
+    })
+
+    it('keeps scheduler bookkeeping and agent attribution off user-writable workflow columns', async () => {
+      const agentId = await agent('sec-workflow-agent', { price: 2900 })
+      const created = await as(carol, () =>
+        db.query(`INSERT INTO workflows (user_id, name, steps) VALUES ($1,'mine','[]') RETURNING id`, [carol])
+      )
+      const workflowId = created.rows[0].id
+
+      for (const assignment of [
+        'next_run_at = NOW()', `schedule_cron = '* * * * *'`, 'run_count = 0', `agent_id = '${agentId}'`,
+      ]) {
+        await expect(
+          as(carol, () => db.query(`UPDATE workflows SET ${assignment} WHERE id = $1`, [workflowId])),
+          assignment
+        ).rejects.toThrow(DENIED)
+      }
+      const renamed = await as(carol, () =>
+        db.query(
+          `UPDATE workflows SET name = 'renamed', is_active = FALSE WHERE id = $1 RETURNING name`,
+          [workflowId]
+        )
+      )
+      expect(renamed.rows).toEqual([{ name: 'renamed' }])
+    })
+
+    it('does not let a user register a file row pointing at an arbitrary object', async () => {
+      await expect(
+        as(carol, () =>
+          db.query(
+            `INSERT INTO stored_files (user_id, filename, storage_path, expires_at)
+             VALUES ($1,'x','users/someone-else/export.csv', NOW() - INTERVAL '1 day')`,
+            [carol]
+          )
+        )
+      ).rejects.toThrow(DENIED)
+    })
+
+    it('lets a user mark a notification read but not rewrite it', async () => {
+      await db.query(`SELECT notify_user($1,'system','Original title')`, [carol])
+      await expect(
+        as(carol, () =>
+          db.query(`UPDATE notifications SET title = 'Payment received' WHERE user_id = $1`, [carol])
+        )
+      ).rejects.toThrow(DENIED)
+
+      const read = await as(carol, () =>
+        db.query(`UPDATE notifications SET read_at = NOW() WHERE user_id = $1 RETURNING title`, [carol])
+      )
+      expect(read.rows.map((r) => r.title)).toContain('Original title')
+    })
   })
 })
