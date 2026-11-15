@@ -3,15 +3,19 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 import {
   AuthError,
+  completePasswordRecovery,
   currentUser,
   getAccessToken,
   isPendingConfirmation,
   isSignedIn,
   onSessionChange,
+  parseRecoveryLink,
   readSession,
+  safeRedirectPath,
   signIn,
   signOut,
   signUp,
+  updatePassword,
   type StoredSession,
 } from './auth'
 
@@ -215,6 +219,270 @@ describe('getAccessToken', () => {
 
     expect(await getAccessToken()).toBeNull()
     expect(isSignedIn()).toBe(false)
+  })
+
+  it('signs out when the API calls the refresh token malformed (400)', async () => {
+    mockFetch([{ body: { data: session({ expires_at: NOW + 30 }) } }])
+    await signIn('ada@example.com', 'x')
+
+    mockFetch([{ status: 400, body: { error: { code: 'bad_request', message: 'bad' } } }])
+
+    expect(await getAccessToken()).toBeNull()
+    expect(isSignedIn()).toBe(false)
+  })
+
+  it.each([
+    ['a 503', { status: 503, body: { error: { code: 'unavailable', message: 'down' } } }],
+    ['a 429', { status: 429, body: { error: { code: 'rate_limited', message: 'slow down' } } }],
+    ['a 500 without a body', { status: 500, body: null }],
+  ])('keeps the session when the refresh fails with %s', async (_label, response) => {
+    // Already expired, so there is no usable token to fall back on.
+    mockFetch([{ body: { data: session({ expires_at: NOW - 10 }) } }])
+    await signIn('ada@example.com', 'x')
+
+    const seen: Array<StoredSession | null> = []
+    const unsubscribe = onSessionChange((s) => seen.push(s))
+    mockFetch([response])
+
+    const failure = await getAccessToken().catch((err: unknown) => err)
+
+    expect(failure).toBeInstanceOf(AuthError)
+    expect(failure).toMatchObject({ code: 'refresh_unavailable', retryable: true })
+    expect(isSignedIn()).toBe(true)
+    expect(readSession()?.refresh_token).toBe('refresh-1')
+    // No sign-out broadcast, so other tabs stay signed in too.
+    expect(seen).toEqual([])
+    unsubscribe()
+  })
+
+  it('keeps the session when the API is unreachable during a refresh', async () => {
+    mockFetch([{ body: { data: session({ expires_at: NOW - 10 }) } }])
+    await signIn('ada@example.com', 'x')
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch')
+      })
+    )
+
+    await expect(getAccessToken()).rejects.toMatchObject({
+      code: 'refresh_unavailable',
+      retryable: true,
+    })
+    expect(isSignedIn()).toBe(true)
+  })
+
+  it('falls back to the current token when a refresh fails before it has expired', async () => {
+    mockFetch([{ body: { data: session({ expires_at: NOW + 30 }) } }])
+    await signIn('ada@example.com', 'x')
+
+    mockFetch([{ status: 503, body: {} }])
+
+    expect(await getAccessToken()).toBe('access-1')
+    expect(isSignedIn()).toBe(true)
+
+    // And a later attempt, once the API is back, succeeds.
+    mockFetch([{ body: { data: session({ access_token: 'access-2' }) } }])
+    expect(await getAccessToken()).toBe('access-2')
+  })
+
+  it('keeps a session another tab rotated while this refresh was rejected', async () => {
+    mockFetch([{ body: { data: session({ expires_at: NOW + 30 }) } }])
+    await signIn('ada@example.com', 'x')
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        // The other tab wins the race and stores the rotated pair first.
+        window.localStorage.setItem(
+          'taskpilot.session',
+          JSON.stringify(session({ access_token: 'access-other', refresh_token: 'refresh-other' }))
+        )
+        return {
+          ok: false,
+          status: 401,
+          json: async () => ({ error: { code: 'unauthorized', message: 'used' } }),
+        } as Response
+      })
+    )
+
+    expect(await getAccessToken()).toBe('access-other')
+    expect(isSignedIn()).toBe(true)
+  })
+
+  it('notifies subscribers with the rotated session after a refresh', async () => {
+    mockFetch([{ body: { data: session({ expires_at: NOW + 30 }) } }])
+    await signIn('ada@example.com', 'x')
+
+    const seen: Array<string | null> = []
+    const unsubscribe = onSessionChange((s) => seen.push(s?.access_token ?? null))
+    mockFetch([{ body: { data: session({ access_token: 'access-2' }) } }])
+
+    await getAccessToken()
+
+    expect(seen).toEqual(['access-2'])
+    unsubscribe()
+  })
+})
+
+// ─── PASSWORD ────────────────────────────────────────────────
+
+describe('updatePassword', () => {
+  it('still works for a signed-in user', async () => {
+    mockFetch([{ body: { data: session() } }])
+    await signIn('ada@example.com', 'x')
+
+    const { calls } = mockFetch([{ body: { data: { updated: true } } }])
+    await updatePassword('new-password-1')
+
+    expect(calls[0].url).toContain('/v1/auth/update-password')
+    expect((calls[0].init.headers as Record<string, string>).Authorization).toBe('Bearer access-1')
+  })
+
+  it('refuses without a session', async () => {
+    await expect(updatePassword('new-password-1')).rejects.toMatchObject({ code: 'unauthorized' })
+  })
+})
+
+describe('parseRecoveryLink', () => {
+  it('reads the recovery session Supabase puts in the fragment', () => {
+    const link = parseRecoveryLink(
+      '#access_token=at&expires_at=1800003600&expires_in=3600&refresh_token=rt&token_type=bearer&type=recovery',
+      ''
+    )
+    expect(link).toEqual({
+      kind: 'tokens',
+      tokens: { access_token: 'at', refresh_token: 'rt', expires_at: 1800003600 },
+    })
+  })
+
+  it('derives expires_at from expires_in when absent', () => {
+    const link = parseRecoveryLink('#access_token=at&refresh_token=rt&expires_in=3600&type=recovery', '', NOW)
+    expect(link).toMatchObject({ kind: 'tokens', tokens: { expires_at: NOW + 3600 } })
+  })
+
+  it('reports an expired or already-used link', () => {
+    const link = parseRecoveryLink(
+      '#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired',
+      ''
+    )
+    expect(link).toMatchObject({ kind: 'error', code: 'otp_expired' })
+    expect(link.kind === 'error' && link.message).toMatch(/expired/)
+  })
+
+  it('reads errors from the query string too', () => {
+    expect(parseRecoveryLink('', '?error=server_error&error_description=Boom')).toEqual({
+      kind: 'error',
+      code: 'server_error',
+      message: 'Boom',
+    })
+  })
+
+  it('rejects tokens that are not a recovery session', () => {
+    expect(parseRecoveryLink('#access_token=at&refresh_token=rt&type=signup', '')).toMatchObject({
+      kind: 'error',
+      code: 'invalid_link',
+    })
+    expect(parseRecoveryLink('#access_token=at&type=recovery', '')).toMatchObject({ kind: 'error' })
+  })
+
+  it('flags PKCE and token_hash links as unsupported', () => {
+    expect(parseRecoveryLink('', '?code=abc')).toMatchObject({ kind: 'unsupported' })
+    expect(parseRecoveryLink('', '?token_hash=abc&type=recovery')).toMatchObject({
+      kind: 'unsupported',
+    })
+  })
+
+  it('returns none for a plain visit', () => {
+    expect(parseRecoveryLink('', '')).toEqual({ kind: 'none' })
+  })
+})
+
+describe('completePasswordRecovery', () => {
+  const tokens = { access_token: 'rec-at', refresh_token: 'rec-rt', expires_at: NOW + 3600 }
+
+  it('sets the password with the recovery token and signs the user in', async () => {
+    const { calls } = mockFetch([
+      { body: { data: { updated: true } } },
+      { body: { data: session({ access_token: 'access-9' }) } },
+    ])
+
+    const result = await completePasswordRecovery(tokens, 'new-password-1')
+
+    expect(calls[0].url).toContain('/v1/auth/update-password')
+    expect((calls[0].init.headers as Record<string, string>).Authorization).toBe('Bearer rec-at')
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ password: 'new-password-1' })
+    expect(calls[1].url).toContain('/v1/auth/refresh')
+    expect(result?.access_token).toBe('access-9')
+    expect(readSession()?.access_token).toBe('access-9')
+  })
+
+  it('needs no stored session', async () => {
+    expect(isSignedIn()).toBe(false)
+    mockFetch([{ body: { data: { updated: true } } }, { body: { data: session() } }])
+    await expect(completePasswordRecovery(tokens, 'new-password-1')).resolves.not.toBeNull()
+  })
+
+  it('maps a rejected recovery token to an expired-link error', async () => {
+    mockFetch([{ status: 401, body: { error: { code: 'unauthorized', message: 'expired' } } }])
+
+    await expect(completePasswordRecovery(tokens, 'new-password-1')).rejects.toMatchObject({
+      code: 'recovery_expired',
+    })
+    expect(isSignedIn()).toBe(false)
+  })
+
+  it('refreshes an expired recovery token before using it', async () => {
+    const { calls } = mockFetch([
+      { body: { data: session({ access_token: 'fresh-at', refresh_token: 'fresh-rt' }) } },
+      { body: { data: { updated: true } } },
+    ])
+
+    await completePasswordRecovery({ ...tokens, expires_at: NOW - 5 }, 'new-password-1')
+
+    expect(calls[0].url).toContain('/v1/auth/refresh')
+    expect((calls[1].init.headers as Record<string, string>).Authorization).toBe('Bearer fresh-at')
+    expect(calls).toHaveLength(2)
+    expect(readSession()?.access_token).toBe('fresh-at')
+  })
+
+  it('returns null when the password changed but sign-in did not', async () => {
+    mockFetch([{ body: { data: { updated: true } } }, { status: 401, body: {} }])
+    await expect(completePasswordRecovery(tokens, 'new-password-1')).resolves.toBeNull()
+  })
+})
+
+// ─── REDIRECTS ───────────────────────────────────────────────
+
+describe('safeRedirectPath', () => {
+  const origin = 'https://app.taskpilot.dev'
+
+  it.each([
+    'https://evil.com',
+    '//evil.com',
+    '/\\evil.com',
+    'javascript:alert(1)',
+    'evil.com',
+    '/\t/evil.com',
+    '\\\\evil.com',
+    'http://app.taskpilot.dev.evil.com/x',
+  ])('rejects %j', (value) => {
+    expect(safeRedirectPath(value, origin)).toBe('/dashboard')
+  })
+
+  it('accepts a same-origin path with a query', () => {
+    expect(safeRedirectPath('/dashboard/runs?x=1', origin)).toBe('/dashboard/runs?x=1')
+  })
+
+  it('falls back when the value is missing', () => {
+    expect(safeRedirectPath(null, origin)).toBe('/dashboard')
+    expect(safeRedirectPath('', origin)).toBe('/dashboard')
+  })
+
+  it('uses the current origin by default', () => {
+    expect(safeRedirectPath('/marketplace/foo')).toBe('/marketplace/foo')
+    expect(safeRedirectPath('//evil.com')).toBe('/dashboard')
   })
 })
 

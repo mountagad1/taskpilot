@@ -7,8 +7,8 @@
 // missing Redis must degrade to "slower", never to "broken".
 // ============================================================
 
+import { createHash } from "node:crypto";
 import { Redis } from "@upstash/redis";
-import { hashString } from "@taskpilot/shared";
 
 export interface CacheEntry {
   result: unknown;
@@ -139,21 +139,42 @@ export class SemanticCache {
   }
 
   /**
-   * Deterministic key from the request. Deliberately excludes user identity:
-   * the same page summarised by two users is the same summary, and sharing
-   * that hit is most of the cost saving.
+   * Deterministic key from EVERYTHING that shapes the answer, scoped to the
+   * caller.
+   *
+   * `scope` (the user id) is required. Page content here is whatever the
+   * user's logged-in page showed — a private inbox, a CRM record — so an
+   * unscoped key would serve one user's summary of their private page to
+   * another user on the same URL.
+   *
+   * The whole input is hashed with SHA-256 over a JSON tuple: no truncation
+   * (two pages sharing a prefix must not collide), no delimiter ambiguity,
+   * and no 32-bit hash an attacker could collide on purpose to poison it.
+   * Every prompt option (tone, target language, instruction…) is part of the
+   * key, so "translate to German" never gets a cached French translation.
    */
   generateKey(params: {
+    scope: string;
     task: string;
     pageContent: string;
     userInput?: string;
     url?: string;
     language?: string;
+    model?: string;
+    options?: Record<string, string>;
   }): string {
-    const { task, pageContent, userInput = "", url = "", language = "en" } = params;
+    const { scope, task, pageContent, userInput = "", url = "", language = "", model = "" } = params;
+    if (!scope) throw new Error("SemanticCache.generateKey requires a scope (the caller's user id)");
 
-    const normalised = pageContent.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 2000);
-    return `semantic:${task}:${hashString(`${task}:${normalised}:${userInput}:${url}:${language}`)}`;
+    const options = Object.entries(params.options ?? {})
+      .filter(([, value]) => value !== "")
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    const content = pageContent.replace(/\s+/g, " ").trim();
+
+    const digest = createHash("sha256")
+      .update(JSON.stringify([scope, task, model, content, userInput, url, language, options]))
+      .digest("hex");
+    return `semantic:${task}:${digest}`;
   }
 
   async get(key: string): Promise<unknown | null> {

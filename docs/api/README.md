@@ -329,15 +329,37 @@ redirect.
 ### `GET /v1/integrations/{provider}/callback`
 
 Called by the provider, not by you. **Unauthenticated by necessity**: it
-arrives as a top-level browser navigation carrying no credential, so the
-`state` parameter is the entire binding to the user who began the flow.
-State is random, single-use, expires in 10 minutes, and is compared in
-constant time. It is consumed *before* the token exchange, so a failed
-exchange cannot be retried with the same link.
+arrives as a top-level browser navigation carrying no credential — so it
+does **not** finish the connection. It checks the `state` (exists, this
+provider, unused, unexpired, constant-time compare) and forwards the browser
+to `/dashboard/integrations?provider=…&state=…&code=…` (with
+`Referrer-Policy: no-referrer`). No code exchange, no token storage.
 
-Always redirects — never returns JSON — because a person is waiting in a
-browser. Success lands on `?connected=hubspot`; every failure lands on
-`?error=<reason>`.
+Why: `state` alone only proves *someone* started the flow. If the callback
+stored tokens, an attacker could start a flow and send the `authorize_url`
+to a victim; the victim's HubSpot grant would land in the attacker's
+account. Completion therefore requires the signed-in user who started it.
+
+Always redirects — never returns JSON. Provider errors and invalid states
+land on `?error=<reason>`.
+
+### `POST /v1/integrations/{provider}/complete`
+
+```jsonc
+{ "state": "…", "code": "…" }
+// → { "data": { "connected": true, "workspace_id": "…", "workspace_name": "…",
+//               "scopes": ["…"], "return_to": "/dashboard/…" | null } }
+```
+
+Session auth only. The dashboard integrations page calls this automatically
+when the callback forwards it there. The state is single-use and consumed
+*before* the token exchange, so a failed exchange cannot be retried.
+
+| Status | When |
+|---|---|
+| `403` | The state belongs to a different user — it is burned, and HubSpot is never contacted |
+| `409` | The state was already used |
+| `400` | Unknown, expired or wrong-provider state, or no `code` |
 
 ### `POST /v1/integrations/{provider}/push`
 

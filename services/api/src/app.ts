@@ -187,6 +187,7 @@ export function createApp(): Hono {
             status: "GET /v1/integrations/status",
             authorize: "POST /v1/integrations/{provider}/authorize",
             callback: "GET /v1/integrations/{provider}/callback",
+            complete: "POST /v1/integrations/{provider}/complete",
             push: "POST /v1/integrations/{provider}/push",
             disconnect: "DELETE /v1/integrations/{provider}",
           },

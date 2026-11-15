@@ -11,8 +11,10 @@ import {
   API_KEY_PREFIX,
   API_SCOPES,
   TEAM_ROLE_RANK,
+  gateCapabilities,
   slugify,
   type ApiScope,
+  type PlanStep,
   type TeamRole,
 } from "@taskpilot/shared";
 
@@ -31,6 +33,7 @@ import {
   validationFailed,
 } from "../lib/errors";
 import { createApiKey, normaliseScopes } from "../lib/keys";
+import { resolveAgentForRun } from "../lib/runs";
 import { WORKFLOW_COLUMNS, parseWorkflowSteps } from "../lib/workflows";
 import {
   caller,
@@ -40,6 +43,7 @@ import {
   readOptionalJson,
   readPagination,
   query,
+  type Caller,
 } from "../middleware/kernel";
 
 // ─── MARKETPLACE ─────────────────────────────────────────────
@@ -582,6 +586,19 @@ workflowRoutes.get("/", guard({ scopes: ["workflows:read"], rateLimit: 120 }), a
   return okList(data ?? [], { total: count ?? 0, page, per_page: perPage });
 });
 
+/** Refuses steps the caller's plan does not include — saved now, run later. */
+function assertStepsAllowed(steps: PlanStep[], plan: Caller["plan"]): void {
+  const { blocked } = gateCapabilities(
+    steps.map((s) => s.action.type),
+    plan
+  );
+  if (blocked.length) {
+    throw planLimit(`This workflow uses ${[...new Set(blocked)].join(", ")}, which your plan does not include.`);
+  }
+}
+
+const SCHEDULE_PLAN_MESSAGE = "Scheduled workflows are available on the Pro plan and above.";
+
 workflowRoutes.post("/", guard({ scopes: ["workflows:write"], rateLimit: 30 }), async (c) => {
   const me = caller(c);
   const body = await readJson(c);
@@ -592,6 +609,17 @@ workflowRoutes.post("/", guard({ scopes: ["workflows:write"], rateLimit: 30 }), 
   }
 
   const steps = parseWorkflowSteps(body.steps);
+  assertStepsAllowed(steps, me.plan);
+
+  // Both ids were inserted unchecked: a workflow could name someone else's
+  // team, or an agent the caller never installed or paid for.
+  const teamId = typeof body.team_id === "string" && body.team_id ? body.team_id : null;
+  if (body.team_id != null && !teamId) throw validationFailed([{ path: "team_id", message: "Must be a team id" }]);
+  if (teamId) await assertTeamMember(me, teamId);
+
+  const agentId = typeof body.agent_id === "string" && body.agent_id ? body.agent_id : null;
+  if (body.agent_id != null && !agentId) throw validationFailed([{ path: "agent_id", message: "Must be an agent id" }]);
+  if (agentId) await resolveAgentForRun(me, agentId);
 
   const triggerType = String(body.trigger_type ?? "manual");
   if (!["manual", "url_match", "schedule"].includes(triggerType)) {
@@ -606,9 +634,7 @@ workflowRoutes.post("/", guard({ scopes: ["workflows:write"], rateLimit: 30 }), 
   if (triggerType === "schedule") {
     // Scheduled workflows run on TaskPilot's infrastructure rather than in
     // the user's browser, so they are a paid capability.
-    if (me.plan === "free") {
-      throw planLimit("Scheduled workflows are available on the Pro plan and above.");
-    }
+    if (me.plan === "free") throw planLimit(SCHEDULE_PLAN_MESSAGE);
 
     cron = String(body.schedule_cron ?? "").trim();
     const issue = validateCron(cron);
@@ -621,8 +647,8 @@ workflowRoutes.post("/", guard({ scopes: ["workflows:write"], rateLimit: 30 }), 
     .from("workflows")
     .insert({
       user_id: me.userId,
-      team_id: body.team_id ?? null,
-      agent_id: body.agent_id ?? null,
+      team_id: teamId,
+      agent_id: agentId,
       name,
       description: typeof body.description === "string" ? body.description.slice(0, 2000) : null,
       trigger_type: triggerType,
@@ -661,11 +687,18 @@ workflowRoutes.patch("/:id", guard({ scopes: ["workflows:write"], rateLimit: 60 
   if (typeof body.description === "string") patch.description = body.description.slice(0, 2000);
   if (typeof body.is_active === "boolean") patch.is_active = body.is_active;
   if (body.trigger_config !== undefined) patch.trigger_config = body.trigger_config;
-  if (body.steps !== undefined) patch.steps = parseWorkflowSteps(body.steps);
+  if (body.steps !== undefined) {
+    const steps = parseWorkflowSteps(body.steps);
+    assertStepsAllowed(steps, me.plan);
+    patch.steps = steps;
+  }
 
   if (body.schedule_cron !== undefined) {
     const cron = body.schedule_cron === null ? null : String(body.schedule_cron).trim();
     if (cron) {
+      // POST enforced this; PATCH did not, so a free user could create a
+      // manual workflow and then add a schedule to it.
+      if (me.plan === "free") throw planLimit(SCHEDULE_PLAN_MESSAGE);
       const issue = validateCron(cron);
       if (issue) throw badRequest(issue);
       patch.schedule_cron = cron;

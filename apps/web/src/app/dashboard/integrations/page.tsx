@@ -10,11 +10,16 @@
 // the marketing copy hopes.
 //
 // `id` here must match the provider slug the API accepts. The button posts
-// to /v1/integrations/{id}/authorize and follows the consent URL it returns;
-// the redirect back lands on this page carrying ?connected= or ?error=.
+// to /v1/integrations/{id}/authorize and follows the consent URL it returns.
+// The provider's redirect goes to the API callback, which lands the browser
+// back here carrying either ?error= or ?provider=&state=&code=. In the
+// second case this page finishes the flow by POSTing state + code to
+// /v1/integrations/{id}/complete with the signed-in user's token — the API
+// only accepts that from the account that started the flow, which is what
+// stops someone else's consent link from attaching a CRM to their account.
 // ============================================================
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { api, useApiList } from '@/lib/client/api'
 import { PRICING_URL } from '@/lib/links'
@@ -118,23 +123,82 @@ export default function IntegrationsPage() {
 
   /** Which provider is mid-request, so only that button shows a spinner. */
   const [busy, setBusy] = useState<string | null>(null)
-  const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const [notice, setNotice] = useState<{ kind: 'ok' | 'error' | 'pending'; text: string } | null>(null)
 
-  // The callback redirects here with the outcome in the query string. Read
-  // it once, then strip it: a reload should not replay a stale banner, and
-  // the parameters are meaningless after they have been shown.
+  /** The state is single-use, so completion must run at most once per load. */
+  const completionStarted = useRef(false)
+
+  // The callback redirects here with the outcome — or the material to finish
+  // the flow — in the query string. Read it once, then strip it: a reload
+  // should not replay a stale banner or re-submit a spent state, and the
+  // code should not linger in the address bar or history.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const connected = params.get('connected')
     const failed = params.get('error')
+    const state = params.get('state')
+    const code = params.get('code')
+    const provider = params.get('provider')
 
-    if (connected) setNotice({ kind: 'ok', text: `${labelFor(connected)} connected successfully.` })
-    else if (failed) setNotice({ kind: 'error', text: failed })
-
-    if (connected || failed) {
+    if (connected || failed || state || code) {
       window.history.replaceState({}, '', window.location.pathname)
     }
+
+    if (failed) {
+      setNotice({ kind: 'error', text: failed })
+      return
+    }
+
+    if (state && code) {
+      if (completionStarted.current) return
+      completionStarted.current = true
+
+      const known = INTEGRATIONS.find((i) => i.id && i.id === provider)
+      if (!known?.id) {
+        setNotice({ kind: 'error', text: 'The connection could not be completed: unknown provider.' })
+        return
+      }
+      void completeConnection(known.id, state, code)
+      return
+    }
+
+    if (connected) setNotice({ kind: 'ok', text: `${labelFor(connected)} connected successfully.` })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const completeConnection = async (provider: string, state: string, code: string) => {
+    setBusy(provider)
+    setNotice({ kind: 'pending', text: `Finishing the ${labelFor(provider)} connection…` })
+    try {
+      const result = await api.post<{ connected: string; return_to: string | null }>(
+        `/v1/integrations/${provider}/complete`,
+        { state, code }
+      )
+
+      // The flow may have been started from another dashboard page. Send the
+      // user back there, as the old callback did; the API has already
+      // checked `return_to` against its allow-list.
+      if (result.return_to) {
+        const target = new URL(result.return_to)
+        const here = window.location.origin + window.location.pathname
+        if (target.origin + target.pathname !== here) {
+          target.searchParams.set('connected', provider)
+          window.location.assign(target.toString())
+          return
+        }
+      }
+
+      setNotice({ kind: 'ok', text: `${labelFor(provider)} connected successfully.` })
+      reload()
+    } catch (err) {
+      setNotice({
+        kind: 'error',
+        text: err instanceof Error ? err.message : 'The connection could not be completed',
+      })
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const connect = useCallback(async (provider: string) => {
     setBusy(provider)
@@ -187,12 +251,34 @@ export default function IntegrationsPage() {
       {notice && (
         <div
           className="rounded-xl p-4 flex items-start justify-between gap-4"
+          role={notice.kind === 'error' ? 'alert' : 'status'}
           style={{
-            background: notice.kind === 'ok' ? 'rgba(16,185,129,0.10)' : 'rgba(239,68,68,0.10)',
-            border: `1px solid ${notice.kind === 'ok' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+            background:
+              notice.kind === 'ok'
+                ? 'rgba(16,185,129,0.10)'
+                : notice.kind === 'pending'
+                  ? 'var(--surface-hover)'
+                  : 'rgba(239,68,68,0.10)',
+            border: `1px solid ${
+              notice.kind === 'ok'
+                ? 'rgba(16,185,129,0.3)'
+                : notice.kind === 'pending'
+                  ? 'var(--border)'
+                  : 'rgba(239,68,68,0.3)'
+            }`,
           }}
         >
-          <p className="text-sm" style={{ color: notice.kind === 'ok' ? '#10b981' : '#ef4444' }}>
+          <p
+            className="text-sm"
+            style={{
+              color:
+                notice.kind === 'ok'
+                  ? '#10b981'
+                  : notice.kind === 'pending'
+                    ? 'var(--foreground-secondary)'
+                    : '#ef4444',
+            }}
+          >
             {notice.text}
           </p>
           <button
