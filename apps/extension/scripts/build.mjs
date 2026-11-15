@@ -1,5 +1,5 @@
 import esbuild from 'esbuild'
-import { mkdirSync, rmSync, cpSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -90,24 +90,64 @@ async function copyStaticFiles() {
   ]
   // Rebuild connect-src rather than prepending, so re-running the build (or
   // building for a different origin) cannot accumulate duplicate entries.
+  //
+  // connect-src takes the bare ORIGIN, not apiOrigin. A CSP source with a
+  // path and no trailing slash matches that exact path only, so
+  // `https://taskpilot.cc/api` would block every call to /api/v1/...
   manifest.content_security_policy.extension_pages = [
     "script-src 'self'",
     "object-src 'self'",
-    `connect-src 'self' ${apiOrigin}`,
+    `connect-src 'self' ${new URL(apiOrigin).origin}`,
   ].join('; ')
 
   writeFileSync(path.join(dist, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
+  verifyManifestFiles(manifest)
   console.log(`[extension] API origin: ${apiOrigin}`)
   console.log(`[extension] Web origin: ${webOrigin}`)
+}
+
+/**
+ * Fail the build if dist/manifest.json names a file that is not in dist/.
+ * Chrome reports that as "Could not load javascript 'content.js' for script"
+ * / "Could not load manifest", which says nothing about what went wrong.
+ */
+function verifyManifestFiles(manifest) {
+  const referenced = new Set([
+    manifest.background?.service_worker,
+    manifest.action?.default_popup,
+    manifest.options_page,
+    ...Object.values(manifest.icons ?? {}),
+    ...Object.values(manifest.action?.default_icon ?? {}),
+    ...(manifest.content_scripts ?? []).flatMap((cs) => [...(cs.js ?? []), ...(cs.css ?? [])]),
+    ...(manifest.web_accessible_resources ?? [])
+      .flatMap((war) => war.resources ?? [])
+      .filter((resource) => !resource.includes('*')),
+  ])
+  referenced.delete(undefined)
+
+  const missing = [...referenced].filter((file) => !existsSync(path.join(dist, file)))
+  if (missing.length > 0) {
+    console.error(`[extension] dist/manifest.json references missing files: ${missing.join(', ')}`)
+    process.exit(1)
+  }
+}
+
+function printLoadInstructions() {
+  console.log('')
+  console.log('[extension] In Chrome: chrome://extensions → Developer mode → Load unpacked → select:')
+  console.log(`[extension]   ${dist}`)
+  console.log('[extension] (the dist folder — NOT apps/extension, which holds uncompiled TypeScript)')
 }
 
 if (isWatch) {
   const contexts = await Promise.all(buildOpts.map((opts) => esbuild.context(opts)))
   await Promise.all(contexts.map((ctx) => ctx.watch()))
   await copyStaticFiles()
+  printLoadInstructions()
   console.log('[extension] watching for changes...')
 } else {
   await Promise.all(buildOpts.map((opts) => esbuild.build(opts)))
   await copyStaticFiles()
   console.log(`[extension] built to ${path.relative(process.cwd(), dist)}`)
+  printLoadInstructions()
 }
