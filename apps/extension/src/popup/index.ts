@@ -12,7 +12,8 @@
 import type { PlanStep, RunStatus } from "@taskpilot/shared";
 
 import { WEB_ORIGIN } from "../shared/config";
-import { sendToBackground, type RunState, type RunUpdate, type SessionState } from "../shared/messages";
+import type { PublicSession } from "../background/sender-policy";
+import { sendToBackground, type RunState, type RunUpdate } from "../shared/messages";
 
 const QUICK_ACTIONS = [
   { label: "Summarize", goal: "Summarize this page" },
@@ -105,7 +106,7 @@ function renderQuickActions(): void {
 // ─── SESSION + AGENTS ────────────────────────────────────────
 
 async function loadSession(): Promise<void> {
-  const response = await sendToBackground<SessionState>({ type: "GET_SESSION" });
+  const response = await sendToBackground<PublicSession>({ type: "GET_SESSION" });
   if (response.ok) el.plan.textContent = response.data.plan;
 }
 

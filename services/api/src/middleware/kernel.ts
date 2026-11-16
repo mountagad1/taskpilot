@@ -242,13 +242,44 @@ export async function recordKeyUsage(
 
 // ─── REQUEST HELPERS ─────────────────────────────────────────
 
+/**
+ * How many proxies in front of this service append to X-Forwarded-For.
+ * 1 = Railway's edge only (the API is called on its Railway domain).
+ * 2 = Vercel's rewrite, then Railway (the API is called via taskpilot.cc/api).
+ * Check what the service sees with GET /v1/ip.
+ */
+export function trustedProxyHops(): number {
+  const hops = Number(process.env.TRUSTED_PROXY_HOPS ?? "1");
+  return Number.isInteger(hops) && hops >= 1 && hops <= 5 ? hops : 1;
+}
+
+/**
+ * The caller's IP, for rate limiting anonymous requests.
+ *
+ * Proxies APPEND to X-Forwarded-For and pass along whatever the client sent,
+ * so the leftmost entries are attacker-controlled: reading the first one let
+ * anyone pick a fresh "IP" per request and walk straight past the login and
+ * signup limits. Only the entries added by our own proxies — counted from the
+ * right — can be trusted. cf-connecting-ip is ignored for the same reason:
+ * nothing in front of this service sets it, so it only ever comes from the
+ * client.
+ */
 export function clientIp(c: Context): string {
-  return (
-    c.req.header("cf-connecting-ip") ??
-    c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ??
-    c.req.header("x-real-ip") ??
-    "unknown"
-  );
+  return pickClientIp(c.req.header("x-forwarded-for"), c.req.header("x-real-ip"), trustedProxyHops());
+}
+
+export function pickClientIp(
+  forwardedFor: string | undefined,
+  realIp: string | undefined,
+  hops: number
+): string {
+  const chain = (forwardedFor ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (chain.length) return chain[Math.max(0, chain.length - hops)];
+  return realIp?.trim() || "unknown";
 }
 
 /** Parses a JSON body, converting malformed input into a 400. */

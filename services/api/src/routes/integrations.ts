@@ -131,7 +131,7 @@ function appUrl(path: string): string {
 
 // ─── LIST ────────────────────────────────────────────────────
 
-integrationRoutes.get("/", guard({ rateLimit: 60 }), async (c) => {
+integrationRoutes.get("/", guard({ scopes: ["integrations:read"], rateLimit: 60 }), async (c) => {
   const me = caller(c);
 
   // Explicit column list: tokens must never leave this service, and

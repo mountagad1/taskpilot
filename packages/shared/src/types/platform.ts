@@ -103,6 +103,11 @@ export const API_SCOPES = [
   "workflows:write",
   "marketplace:read",
   "exports:write",
+  "teams:read",
+  "teams:write",
+  "notifications:read",
+  "notifications:write",
+  "integrations:read",
 ] as const;
 
 export type ApiScope = (typeof API_SCOPES)[number];

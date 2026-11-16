@@ -17,8 +17,25 @@ import { Hono } from "hono";
 // Session-creating calls (signUp, signInWithPassword, refreshSession) MUST use
 // createAuthClient(), never getAdminClient() — see createAuthClient's comment.
 import { createAuthClient, getAdminClient, hasSupabaseCredentials } from "../lib/clients";
-import { badRequest, notConfigured, ok, unauthorized, validationFailed } from "../lib/errors";
+import { badRequest, notConfigured, ok, rateLimited, unauthorized, validationFailed } from "../lib/errors";
+import { checkRateLimit } from "../lib/security";
 import { guard, readJson } from "../middleware/kernel";
+
+/**
+ * Attempts per minute against ONE email address, whatever IP they come
+ * from. The per-IP guard limit alone does not stop a password-guessing run
+ * spread over many addresses (a botnet, or spoofed proxy headers); this
+ * does. Exported for tests.
+ */
+export const ACCOUNT_LIMITS = { login: 5, signup: 3, "reset-password": 3 } as const;
+
+async function limitAccount(action: keyof typeof ACCOUNT_LIMITS, email: string): Promise<void> {
+  // Hash the address so rate-limit keys in Redis do not hold plain emails.
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(email.toLowerCase()));
+  const id = Buffer.from(digest).toString("hex").slice(0, 32);
+  const result = await checkRateLimit(`/v1/auth/${action}#account`, id, ACCOUNT_LIMITS[action]);
+  if (!result.allowed) throw rateLimited(Math.max(1, result.reset - Math.floor(Date.now() / 1000)));
+}
 
 export const authRoutes = new Hono();
 
@@ -90,6 +107,7 @@ authRoutes.post("/signup", guard({ auth: false, rateLimit: 10 }), async (c) => {
 
   const body = await readJson(c);
   const { email, password } = readCredentials(body, true);
+  await limitAccount("signup", email);
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 120) : undefined;
 
   // Send the confirmation link back to our own app. Without this Supabase
@@ -125,6 +143,7 @@ authRoutes.post("/login", guard({ auth: false, rateLimit: 20 }), async (c) => {
 
   const body = await readJson(c);
   const { email, password } = readCredentials(body, false);
+  await limitAccount("login", email);
 
   const { data, error } = await createAuthClient().auth.signInWithPassword({ email, password });
 
@@ -159,7 +178,7 @@ authRoutes.post("/refresh", guard({ auth: false, rateLimit: 60 }), async (c) => 
 
 // ─── SIGN OUT ────────────────────────────────────────────────
 
-authRoutes.post("/logout", guard({ rateLimit: 60 }), async (c) => {
+authRoutes.post("/logout", guard({ allow: ["session"], rateLimit: 60 }), async (c) => {
   const authorization = c.req.header("authorization") ?? "";
   const token = authorization.replace(/^Bearer\s+/i, "");
 
@@ -206,6 +225,7 @@ authRoutes.post("/reset-password", guard({ auth: false, rateLimit: 10 }), async 
   if (!EMAIL_RE.test(email)) {
     throw validationFailed([{ path: "email", message: "Enter a valid email address" }]);
   }
+  await limitAccount("reset-password", email);
 
   try {
     await createAuthClient().auth.resetPasswordForEmail(email, { redirectTo });
@@ -217,7 +237,7 @@ authRoutes.post("/reset-password", guard({ auth: false, rateLimit: 10 }), async 
   return ok({ sent: true });
 });
 
-authRoutes.post("/update-password", guard({ rateLimit: 10 }), async (c) => {
+authRoutes.post("/update-password", guard({ allow: ["session"], rateLimit: 10 }), async (c) => {
   assertConfigured();
 
   const body = await readJson(c);
