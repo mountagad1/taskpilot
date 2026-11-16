@@ -39,6 +39,11 @@ const SCOPE_HELP: Record<ApiScope, string> = {
   'workflows:write': 'Create and edit workflows',
   'marketplace:read': 'Browse the public catalogue',
   'exports:write': 'Generate exports',
+  'teams:read': 'List teams, members and invites',
+  'teams:write': 'Create teams, invite, change and remove members',
+  'notifications:read': 'Read notifications',
+  'notifications:write': 'Mark notifications as read',
+  'integrations:read': 'List connected integrations (never tokens)',
 }
 
 const DEFAULT_SCOPES: ApiScope[] = ['agents:read', 'runs:read', 'runs:write']

@@ -3,13 +3,13 @@
 // apps/extension/src/options/index.ts
 // ============================================================
 
-interface ExtensionSession {
-  session_id: string;
-  user_id?: string;
-  email?: string;
-  auth_token?: string;
-  plan: "free" | "pro" | "enterprise";
-}
+import type { PublicSession } from "../background/sender-policy";
+import { WEB_ORIGIN } from "../shared/config";
+import { sendToBackground } from "../shared/messages";
+
+type ExtensionSession = Pick<PublicSession, "email" | "plan">;
+
+const SIGNED_OUT: ExtensionSession = { plan: "free" };
 
 const PLAN_LABEL: Record<ExtensionSession["plan"], string> = {
   free: "Free plan",
@@ -17,8 +17,10 @@ const PLAN_LABEL: Record<ExtensionSession["plan"], string> = {
   enterprise: "Enterprise plan",
 };
 
+/** The background replies with a { ok, data } envelope, never the bare session. */
 async function getSession(): Promise<ExtensionSession> {
-  return chrome.runtime.sendMessage({ type: "GET_SESSION" });
+  const response = await sendToBackground<PublicSession>({ type: "GET_SESSION" });
+  return response.ok ? response.data : SIGNED_OUT;
 }
 
 function renderAccount(session: ExtensionSession) {
@@ -42,11 +44,11 @@ function renderAccount(session: ExtensionSession) {
 }
 
 function handleSignIn() {
-  chrome.tabs.create({ url: "https://taskpilot.cc/auth/login?source=extension" });
+  chrome.tabs.create({ url: `${WEB_ORIGIN}/auth/login?source=extension` });
 }
 
 async function handleSignOut() {
-  await chrome.runtime.sendMessage({ type: "CLEAR_SESSION" });
+  await sendToBackground({ type: "CLEAR_SESSION" });
   const session = await getSession();
   renderAccount(session);
 }

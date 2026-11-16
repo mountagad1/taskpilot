@@ -28,7 +28,15 @@ import {
   exportRoutes,
   workerRoutes,
 } from "./routes/misc";
-import { caller, guard, recordKeyUsage, resolveCaller, toErrorResponse } from "./middleware/kernel";
+import {
+  caller,
+  clientIp,
+  guard,
+  recordKeyUsage,
+  resolveCaller,
+  toErrorResponse,
+  trustedProxyHops,
+} from "./middleware/kernel";
 import { ok } from "./lib/errors";
 import { getAdminClient, hasSupabaseCredentials, hasStripeCredentials } from "./lib/clients";
 import { hasEncryptionKey } from "./lib/crypto";
@@ -254,6 +262,19 @@ export function createApp(): Hono {
 
 /** Mounted before the resource routers so `/v1/me` is not shadowed. */
 function v1Me(app: Hono): void {
+  // Shows callers which address the rate limiter attributes to them, so
+  // TRUSTED_PROXY_HOPS can be checked against the real proxy chain: the
+  // `ip` here must be your own public IP, and must not change when you send
+  // a made-up X-Forwarded-For header. Echoes only the caller's own request.
+  app.get("/v1/ip", guard({ auth: false, rateLimit: 30 }), (c) =>
+    ok({
+      ip: clientIp(c),
+      forwarded_for: c.req.header("x-forwarded-for") ?? null,
+      real_ip: c.req.header("x-real-ip") ?? null,
+      trusted_proxy_hops: trustedProxyHops(),
+    })
+  );
+
   app.get("/v1/me", guard({ rateLimit: 120 }), (c) => {
     const me = caller(c);
     return ok({

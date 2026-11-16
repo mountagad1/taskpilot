@@ -26,14 +26,30 @@ import {
   type UiMessage,
 } from "../shared/messages";
 import { RunExecutor } from "./executor";
+import { authorizeMessage, classifySender, publicSession } from "./sender-policy";
 
 // ─── SESSION ─────────────────────────────────────────────────
+
+// chrome.storage.local is readable from content scripts by default, and a
+// content script runs on every website — so without this, the signed-in
+// user's API token sat one `chrome.storage.local.get()` away from any page
+// that compromised our content script. Restrict it to extension pages and
+// this worker. Runs on every worker start, before the session is read.
+const storageLocked: Promise<void> = (async () => {
+  try {
+    await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
+  } catch {
+    // Chrome < 102 has no access levels. The token is still never handed
+    // to content scripts through messaging (see sender-policy.ts).
+  }
+})();
 
 let cachedSession: SessionState | null = null;
 
 async function getSession(): Promise<SessionState> {
   if (cachedSession) return cachedSession;
 
+  await storageLocked;
   const stored = await chrome.storage.local.get("session");
   if (stored.session) {
     cachedSession = stored.session as SessionState;
@@ -192,8 +208,19 @@ async function readContext(tabId: number): Promise<PageContext> {
 
 // ─── MESSAGE HANDLING ────────────────────────────────────────
 
-chrome.runtime.onMessage.addListener((message: UiMessage, _sender, sendResponse) => {
-  handleUiMessage(message).then(sendResponse, (err) => sendResponse(failure(err)));
+chrome.runtime.onMessage.addListener((raw: UiMessage, sender, sendResponse) => {
+  // Run broadcasts (RUN_STARTED, RUN_STEP…) from this worker also arrive
+  // here in other contexts; anything without a type is not for us.
+  if (!raw || typeof raw !== "object" || typeof raw.type !== "string") return false;
+
+  const kind = classifySender(sender, chrome.runtime.id, chrome.runtime.getURL(""));
+  const decision = authorizeMessage(raw, kind, sender.tab?.id);
+  if (!decision.allowed) {
+    sendResponse(failure(decision.reason, "forbidden"));
+    return false;
+  }
+
+  handleUiMessage(decision.message).then(sendResponse, (err) => sendResponse(failure(err)));
   return true; // keep the channel open for the async reply
 });
 
@@ -201,7 +228,8 @@ async function handleUiMessage(message: UiMessage): Promise<Reply<unknown>> {
   try {
     switch (message.type) {
       case "GET_SESSION":
-        return reply(await getSession());
+        // Never the token: UI pages only need to know who is signed in.
+        return reply(publicSession(await getSession()));
 
       case "CLEAR_SESSION":
         await clearSession();

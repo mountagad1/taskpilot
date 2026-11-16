@@ -101,7 +101,7 @@ marketplaceRoutes.get("/agents/:slug", guard({ auth: false, rateLimit: 120 }), a
 
 export const notificationRoutes = new Hono();
 
-notificationRoutes.get("/", guard({ rateLimit: 240 }), async (c) => {
+notificationRoutes.get("/", guard({ scopes: ["notifications:read"], rateLimit: 240 }), async (c) => {
   const me = caller(c);
   const { from, to, page, perPage } = readPagination(c, 20);
 
@@ -134,7 +134,7 @@ notificationRoutes.get("/", guard({ rateLimit: 240 }), async (c) => {
   });
 });
 
-notificationRoutes.post("/read", guard({ rateLimit: 120 }), async (c) => {
+notificationRoutes.post("/read", guard({ scopes: ["notifications:write"], rateLimit: 120 }), async (c) => {
   const me = caller(c);
   const body = await readOptionalJson(c);
   const ids = Array.isArray(body.ids)
@@ -280,7 +280,7 @@ export const teamRoutes = new Hono();
 const SEATS_BY_PLAN: Record<string, number> = { free: 3, pro: 10, enterprise: 200 };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-teamRoutes.get("/", guard({ rateLimit: 60 }), async (c) => {
+teamRoutes.get("/", guard({ scopes: ["teams:read"], rateLimit: 60 }), async (c) => {
   const me = caller(c);
 
   const { data, error } = await me.db
@@ -298,7 +298,7 @@ teamRoutes.get("/", guard({ rateLimit: 60 }), async (c) => {
   return okList(teams);
 });
 
-teamRoutes.post("/", guard({ rateLimit: 10 }), async (c) => {
+teamRoutes.post("/", guard({ scopes: ["teams:write"], rateLimit: 10 }), async (c) => {
   const me = caller(c);
   const body = await readJson(c);
   const name = String(body.name ?? "").trim();
@@ -336,7 +336,7 @@ teamRoutes.post("/", guard({ rateLimit: 10 }), async (c) => {
   return ok({ ...data, role: "owner" }, { status: 201 });
 });
 
-teamRoutes.get("/:id/members", guard({ rateLimit: 120 }), async (c) => {
+teamRoutes.get("/:id/members", guard({ scopes: ["teams:read"], rateLimit: 120 }), async (c) => {
   const me = caller(c);
   const teamId = c.req.param("id");
   await assertTeamMember(me, teamId);
@@ -351,7 +351,7 @@ teamRoutes.get("/:id/members", guard({ rateLimit: 120 }), async (c) => {
   return okList(data ?? []);
 });
 
-teamRoutes.patch("/:id/members", guard({ rateLimit: 60 }), async (c) => {
+teamRoutes.patch("/:id/members", guard({ scopes: ["teams:write"], rateLimit: 60 }), async (c) => {
   const me = caller(c);
   const teamId = c.req.param("id");
   const role = await assertTeamMember(me, teamId);
@@ -396,7 +396,7 @@ teamRoutes.patch("/:id/members", guard({ rateLimit: 60 }), async (c) => {
   return ok(data);
 });
 
-teamRoutes.delete("/:id/members", guard({ rateLimit: 60 }), async (c) => {
+teamRoutes.delete("/:id/members", guard({ scopes: ["teams:write"], rateLimit: 60 }), async (c) => {
   const me = caller(c);
   const teamId = c.req.param("id");
   const role = await assertTeamMember(me, teamId);
@@ -424,7 +424,7 @@ teamRoutes.delete("/:id/members", guard({ rateLimit: 60 }), async (c) => {
   return ok({ removed: targetId });
 });
 
-teamRoutes.get("/:id/invites", guard({ rateLimit: 60 }), async (c) => {
+teamRoutes.get("/:id/invites", guard({ scopes: ["teams:read"], rateLimit: 60 }), async (c) => {
   const me = caller(c);
   const teamId = c.req.param("id");
   const role = await assertTeamMember(me, teamId);
@@ -442,7 +442,7 @@ teamRoutes.get("/:id/invites", guard({ rateLimit: 60 }), async (c) => {
   return okList(data ?? []);
 });
 
-teamRoutes.post("/:id/invites", guard({ rateLimit: 30 }), async (c) => {
+teamRoutes.post("/:id/invites", guard({ scopes: ["teams:write"], rateLimit: 30 }), async (c) => {
   const me = caller(c);
   const teamId = c.req.param("id");
   const role = await assertTeamMember(me, teamId);
@@ -514,7 +514,7 @@ teamRoutes.post("/:id/invites", guard({ rateLimit: 30 }), async (c) => {
   return ok(data, { status: 201 });
 });
 
-teamRoutes.post("/invites/accept", guard({ rateLimit: 20 }), async (c) => {
+teamRoutes.post("/invites/accept", guard({ scopes: ["teams:write"], rateLimit: 20 }), async (c) => {
   const me = caller(c);
   const body = await readJson(c);
   const token = String(body.token ?? "").trim();
