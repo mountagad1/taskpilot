@@ -29,6 +29,14 @@ export default defineWorkspace([
   },
   {
     test: {
+      name: 'extension',
+      root: './apps/extension',
+      environment: 'node',
+      include: ['src/**/*.test.ts'],
+    },
+  },
+  {
+    test: {
       name: 'sdk',
       root: './packages/sdk',
       environment: 'node',

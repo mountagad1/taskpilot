@@ -60,14 +60,22 @@ database leak yields no usable credentials.
 | `POST` | `/v1/auth/reset-password` | Always answers the same, so it cannot enumerate accounts |
 | `POST` | `/v1/auth/update-password` | Requires a valid access token |
 | `GET` | `/v1/me` | Identity, plan and effective scopes |
+| `GET` | `/v1/ip` | The IP the rate limiter sees for you. Use it to check `TRUSTED_PROXY_HOPS` |
 
 ### Scopes
 
 `agents:read` `agents:write` `agents:publish` `runs:read` `runs:write`
 `workflows:read` `workflows:write` `marketplace:read` `exports:write`
+`teams:read` `teams:write` `notifications:read` `notifications:write`
+`integrations:read`
 
-A missing scope returns `403` naming what was required. Key management
-(`/v1/keys`) is deliberately **session-only**: a leaked key cannot mint more.
+`/v1/ai/*` needs `runs:write`, since it spends AI quota.
+
+A missing scope returns `403` naming what was required. Some routes are
+deliberately **session-only**, so a leaked key cannot use them: key management
+(`/v1/keys`, so a key cannot mint more), billing (`/v1/billing/*`),
+connecting or removing integrations, `/v1/auth/logout` and
+`/v1/auth/update-password`.
 
 ---
 
@@ -100,7 +108,9 @@ Pagination: `?page=1&per_page=25`, capped at 100.
 | `not_configured` | 503 | The deployment is missing a required service |
 
 Rate limits are per caller, per endpoint. `429` carries `Retry-After` in
-seconds; the official SDK honours it automatically.
+seconds; the official SDK honours it automatically. Anonymous callers are
+counted by IP. Login, signup and password reset are also limited per email
+address (5, 3 and 3 a minute), whatever IP the attempts come from.
 
 ---
 

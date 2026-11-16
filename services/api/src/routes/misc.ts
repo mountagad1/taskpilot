@@ -241,7 +241,7 @@ const TASK_PROMPTS: Record<string, (ctx: Record<string, string>) => string> = {
  * this is the whole reason the extension proxies through here rather than
  * calling a model provider directly.
  */
-aiRoutes.post("/process", guard({ rateLimit: 60 }), async (c) => {
+aiRoutes.post("/process", guard({ scopes: ["runs:write"], rateLimit: 60 }), async (c) => {
   const me = caller(c);
   const body = await readJson(c);
 
@@ -343,7 +343,7 @@ aiRoutes.post("/process", guard({ rateLimit: 60 }), async (c) => {
  * no model call, so it is free, instant, and safe to run on every keystroke
  * in the playground.
  */
-aiRoutes.post("/smart-paste", guard({ rateLimit: 120 }), async (c) => {
+aiRoutes.post("/smart-paste", guard({ scopes: ["runs:write"], rateLimit: 120 }), async (c) => {
   const body = await readJson(c);
   const text = String(body.clipboardText ?? body.text ?? "").slice(0, 5000);
 
@@ -382,7 +382,7 @@ aiRoutes.post("/smart-paste", guard({ rateLimit: 120 }), async (c) => {
 
 export const billingRoutes = new Hono();
 
-billingRoutes.post("/checkout", guard({ rateLimit: 20 }), async (c) => {
+billingRoutes.post("/checkout", guard({ allow: ["session"], rateLimit: 20 }), async (c) => {
   const me = caller(c);
   const body = await readJson(c);
   const agentId = String(body.agentId ?? body.agent_id ?? "");

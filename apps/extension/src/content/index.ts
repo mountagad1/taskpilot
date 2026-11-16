@@ -126,6 +126,10 @@ function readContext(): PageContext {
 // ─── KEYBOARD ────────────────────────────────────────────────
 
 function handleKeydown(event: KeyboardEvent): void {
+  // The page shares this DOM and can dispatch fake key events; only a real
+  // keypress from the user may drive TaskPilot.
+  if (!event.isTrusted) return;
+
   // Alt+K opens the palette. Chrome commands cover this too, but a page that
   // swallows the command still leaves this path working.
   if (event.altKey && event.key.toLowerCase() === "k") {
@@ -355,7 +359,9 @@ function buildSuggestionRow(suggestion: Suggestion, active: boolean): HTMLElemen
   label.textContent = suggestion.label;
 
   row.append(icon, label);
-  row.addEventListener("click", () => void runGoal(suggestion.goal));
+  row.addEventListener("click", (event) => {
+    if (event.isTrusted) void runGoal(suggestion.goal);
+  });
   row.addEventListener("mouseenter", () => setActiveRow(row));
 
   return row;
@@ -368,7 +374,7 @@ function setActiveRow(target: HTMLElement): void {
 }
 
 function handlePaletteKeys(event: KeyboardEvent): void {
-  if (!paletteElements) return;
+  if (!paletteElements || !event.isTrusted) return;
 
   const rows = [...paletteElements.list.querySelectorAll<HTMLElement>(".tp-suggestion")];
   const activeIndex = rows.findIndex((row) => row.dataset.active === "true");
