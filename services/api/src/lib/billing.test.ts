@@ -101,6 +101,9 @@ function from(table: string) {
       filters.push((r) => values.includes(r[column]))
       return builder
     },
+    limit() {
+      return builder
+    },
     maybeSingle() {
       const { data, error } = run()
       return Promise.resolve({ data: Array.isArray(data) ? (data[0] ?? null) : data, error })
@@ -522,6 +525,37 @@ describe('POST /v1/billing/subscribe', () => {
   it('reports an unconfigured price as not configured', async () => {
     delete process.env.STRIPE_PRICE_PRO_ANNUAL
     expect((await subscribe(asSession, { plan: 'pro', interval: 'annual' })).status).toBe(503)
+  })
+
+  it('gives a first-time Pro subscriber a 3-day trial', async () => {
+    delete process.env.STRIPE_PRO_TRIAL_DAYS
+    expect((await subscribe(asSession, { plan: 'pro' })).status).toBe(200)
+    const params = fakeStripe.checkout.sessions.create.mock.calls[0][0] as Row
+    expect((params.subscription_data as Row).trial_period_days).toBe(3)
+  })
+
+  it('gives no second trial after a canceled subscription', async () => {
+    tables.subscriptions = [{ user_id: USER_ID, stripe_subscription_id: 'sub_old', plan: 'pro', status: 'canceled' }]
+    expect((await subscribe(asSession, { plan: 'pro' })).status).toBe(200)
+    const params = fakeStripe.checkout.sessions.create.mock.calls[0][0] as Row
+    expect(params.subscription_data).not.toHaveProperty('trial_period_days')
+  })
+
+  it('gives Enterprise no trial', async () => {
+    expect((await subscribe(asSession, { plan: 'enterprise' })).status).toBe(200)
+    const params = fakeStripe.checkout.sessions.create.mock.calls[0][0] as Row
+    expect(params.subscription_data).not.toHaveProperty('trial_period_days')
+  })
+
+  it('lets STRIPE_PRO_TRIAL_DAYS change or turn off the trial', async () => {
+    process.env.STRIPE_PRO_TRIAL_DAYS = '7'
+    await subscribe(asSession, { plan: 'pro' })
+    expect((fakeStripe.checkout.sessions.create.mock.calls[0][0].subscription_data as Row).trial_period_days).toBe(7)
+
+    process.env.STRIPE_PRO_TRIAL_DAYS = '0'
+    await subscribe(asSession, { plan: 'pro' })
+    expect(fakeStripe.checkout.sessions.create.mock.calls[1][0].subscription_data).not.toHaveProperty('trial_period_days')
+    delete process.env.STRIPE_PRO_TRIAL_DAYS
   })
 
   it('refuses a second subscription while one is live', async () => {
