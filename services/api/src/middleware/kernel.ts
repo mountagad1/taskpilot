@@ -243,14 +243,22 @@ export async function recordKeyUsage(
 // ─── REQUEST HELPERS ─────────────────────────────────────────
 
 /**
- * How many proxies in front of this service append to X-Forwarded-For.
- * 1 = Railway's edge only (the API is called on its Railway domain).
- * 2 = Vercel's rewrite, then Railway (the API is called via taskpilot.cc/api).
- * Check what the service sees with GET /v1/ip.
+ * Which X-Forwarded-For entry, counted from the right, is the caller.
+ *
+ * Measured on the production Railway service (GET /v1/ip): Railway's edge
+ * DISCARDS any X-Forwarded-For the client sends and writes
+ * "<client>, <edge address>", where the edge address changes per request.
+ * So the client is the 2nd entry from the right, and it cannot be spoofed.
+ * 1 would key every anonymous rate limit on Railway's rotating edge address.
+ *
+ * Override with TRUSTED_PROXY_HOPS only if the proxy chain changes, and
+ * re-check GET /v1/ip afterwards.
  */
+export const DEFAULT_PROXY_HOPS = 2;
+
 export function trustedProxyHops(): number {
-  const hops = Number(process.env.TRUSTED_PROXY_HOPS ?? "1");
-  return Number.isInteger(hops) && hops >= 1 && hops <= 5 ? hops : 1;
+  const hops = Number(process.env.TRUSTED_PROXY_HOPS ?? DEFAULT_PROXY_HOPS);
+  return Number.isInteger(hops) && hops >= 1 && hops <= 5 ? hops : DEFAULT_PROXY_HOPS;
 }
 
 /**

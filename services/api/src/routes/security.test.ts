@@ -162,6 +162,14 @@ describe('pickClientIp', () => {
     expect(pickClientIp('1.1.1.1, 2.2.2.2, 203.0.113.9', undefined, 1)).toBe('203.0.113.9')
   })
 
+  it('reads the Railway "<client>, <edge>" header correctly with the default', async () => {
+    const { DEFAULT_PROXY_HOPS } = await import('../middleware/kernel')
+    expect(DEFAULT_PROXY_HOPS).toBe(2)
+    // Shape captured from production: client first, a per-request edge address last.
+    expect(pickClientIp('160.191.77.117, 152.233.33.163', '160.191.77.117', DEFAULT_PROXY_HOPS)).toBe('160.191.77.117')
+    expect(pickClientIp('160.191.77.117, 152.233.68.98', '160.191.77.117', DEFAULT_PROXY_HOPS)).toBe('160.191.77.117')
+  })
+
   it('skips one more hop behind the Vercel rewrite', () => {
     // Vercel replaces the header with the visitor, Railway appends Vercel's address.
     expect(pickClientIp('198.51.100.7, 76.76.21.1', undefined, 2)).toBe('198.51.100.7')
@@ -177,7 +185,8 @@ describe('pickClientIp', () => {
       (await (
         await app.request(
           new Request('http://api.test/v1/ip', {
-            headers: { 'cf-connecting-ip': fake, 'x-forwarded-for': `${fake}, 203.0.113.9` },
+            // As Railway delivers it: "<client>, <edge>", plus a forged Cloudflare header.
+            headers: { 'cf-connecting-ip': fake, 'x-forwarded-for': '203.0.113.9, 152.233.33.163' },
           })
         )
       ).json()).data.ip
