@@ -6,10 +6,19 @@
 //
 // The callback is the awkward part of OAuth: it arrives as a top-level
 // browser navigation from the provider, so it carries no Authorization
-// header and no cookie this service would trust. The `state` parameter is
-// therefore the entire binding between the callback and the user who
-// started the flow — which is why it is random, single-use, expiring, and
-// compared in constant time.
+// header and no cookie this service would trust. A `state` (random,
+// single-use, expiring, compared in constant time) proves which user
+// STARTED the flow — but not that the same person approved it, because a
+// consent URL can be handed to someone else. So the flow finishes in two
+// steps:
+//
+//   1. GET  /:provider/callback  (unauthenticated) validates the state and
+//      forwards state + code to the dashboard. It stores nothing.
+//   2. POST /:provider/complete  (session) consumes the state only if it
+//      was minted for the calling user, then exchanges the code.
+//
+// PKCE is not used: HubSpot's documented authorization-code flow is a
+// confidential-client flow with no code_challenge support (see hubspot.ts).
 // ============================================================
 
 import { Hono } from "hono";
@@ -210,12 +219,85 @@ integrationRoutes.post("/:provider/authorize", guard({ allow: ["session"], rateL
   });
 });
 
+// ─── STATE LOOKUP ────────────────────────────────────────────
+
+interface StoredState {
+  state: string;
+  user_id: string;
+  provider: string;
+  redirect_uri: string;
+  return_to: string | null;
+  expires_at: string;
+  consumed_at: string | null;
+}
+
+type StateCheck =
+  | { ok: true; stored: StoredState }
+  | { ok: false; reason: string; stored: StoredState | null };
+
+/**
+ * Finds a state row and checks the properties that do not depend on who is
+ * asking: that it exists, matches, belongs to this provider, is unused and
+ * is unexpired. Shared by the callback (which only validates) and the
+ * completion step (which also checks ownership and then consumes).
+ */
+async function lookupState(presented: string, provider: string): Promise<StateCheck> {
+  const admin = getAdminClient();
+
+  const { data: stored } = await admin
+    .from("oauth_states")
+    .select("state, user_id, provider, redirect_uri, return_to, expires_at, consumed_at")
+    .eq("state", presented)
+    .maybeSingle();
+
+  if (!stored) return { ok: false, reason: "This authorization request is not recognised", stored: null };
+
+  // Constant-time even though the row was found by equality: the lookup
+  // above is the database's business, this is ours.
+  if (!safeCompare(stored.state, presented)) return { ok: false, reason: "State mismatch", stored: null };
+  if (stored.provider !== provider) {
+    return { ok: false, reason: "State was issued for a different provider", stored };
+  }
+  if (stored.consumed_at) {
+    return { ok: false, reason: "This authorization link has already been used", stored };
+  }
+  if (new Date(stored.expires_at).getTime() < Date.now()) {
+    return { ok: false, reason: "This authorization request expired. Please try connecting again.", stored };
+  }
+
+  return { ok: true, stored: stored as StoredState };
+}
+
+/**
+ * Marks a state consumed. Returns whether THIS call was the one that burned
+ * it, so a lost race against a concurrent completion is detectable.
+ */
+async function burnState(presented: string) {
+  return getAdminClient()
+    .from("oauth_states")
+    .update({ consumed_at: new Date().toISOString() })
+    .eq("state", presented)
+    .is("consumed_at", null)
+    .select("state")
+    .maybeSingle();
+}
+
 // ─── CALLBACK ────────────────────────────────────────────────
 
 /**
  * Deliberately unauthenticated: this is a redirect from the provider, so
- * there is no credential to present. `state` is what proves the flow was
- * one we started, and for whom.
+ * there is no credential to present.
+ *
+ * And because there is no credential, it must NOT finish the flow. A state
+ * proves which TaskPilot user started an authorization, not which person is
+ * sitting at the browser that approved it. If this route exchanged the code
+ * itself, an attacker could start a flow, send the resulting consent URL to
+ * a victim, and have the victim's CRM tokens saved under the attacker's
+ * account (OAuth "account linking" CSRF). So the callback only checks that
+ * the state is live and hands the code to the dashboard, which completes it
+ * through `POST /:provider/complete` with the signed-in user's session —
+ * and that endpoint refuses unless the session belongs to whoever minted
+ * the state.
  *
  * Failures redirect to the dashboard with a reason rather than rendering
  * JSON — the user is sitting in a browser, not reading a response body.
@@ -246,77 +328,134 @@ integrationRoutes.get("/:provider/callback", async (c) => {
 
   if (!presentedState || !code) return fail("The callback was missing its state or code");
 
-  const admin = getAdminClient();
+  // Validated here only so a dead link fails on arrival with a clear reason
+  // rather than after a round trip through the dashboard. Nothing is
+  // consumed and nothing is exchanged: that needs an authenticated caller.
+  const check = await lookupState(presentedState, provider);
+  if (!check.ok) return fail(check.reason);
 
-  const { data: stored } = await admin
-    .from("oauth_states")
-    .select("state, user_id, provider, redirect_uri, return_to, expires_at, consumed_at")
-    .eq("state", presentedState)
-    .maybeSingle();
+  // Always the integrations page, whatever `return_to` says: that page is
+  // what knows how to finish the flow. It forwards to `return_to` after.
+  const params = [
+    ["provider", provider],
+    ["state", presentedState],
+    ["code", code],
+  ]
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join("&");
 
-  if (!stored) return fail("This authorization request is not recognised");
+  // The code is in the URL the browser lands on. It is useless without the
+  // client secret and is bound to its state's owner, but there is still no
+  // reason to leak it in a Referer header from the dashboard.
+  c.header("Referrer-Policy", "no-referrer");
+  return c.redirect(`${appUrl("/dashboard/integrations")}?${params}`);
+});
 
-  // Constant-time even though the row was found by equality: the lookup
-  // above is the database's business, this is ours.
-  if (!safeCompare(stored.state, presentedState)) return fail("State mismatch");
-  if (stored.provider !== provider) return fail("State was issued for a different provider");
-  if (stored.consumed_at) return fail("This authorization link has already been used");
-  if (new Date(stored.expires_at).getTime() < Date.now()) {
-    return fail("This authorization request expired. Please try connecting again.");
+// ─── COMPLETE AUTHORIZATION ──────────────────────────────────
+
+/**
+ * Finishes the flow on behalf of the signed-in user. This is the step that
+ * binds the provider's grant to an account, so it is session-authenticated
+ * like /authorize and only succeeds for the user who started the flow.
+ */
+integrationRoutes.post("/:provider/complete", guard({ allow: ["session"], rateLimit: 20 }), async (c) => {
+  const provider = assertSupported(c.req.param("provider"));
+  const me = caller(c);
+
+  // Checked before the state is touched, so a deployment fault leaves the
+  // user able to retry once it is fixed rather than with a burnt link.
+  if (!hasEncryptionKey()) {
+    throw notConfigured(
+      "INTEGRATION_ENCRYPTION_KEY is not set, so an OAuth token could not be stored securely."
+    );
   }
+
+  const body = await readJson(c);
+  const presentedState = typeof body.state === "string" ? body.state : "";
+  const code = typeof body.code === "string" ? body.code : "";
+  if (!presentedState || !code) throw badRequest("Provide the `state` and `code` from the callback");
+
+  const check = await lookupState(presentedState, provider);
+
+  // Ownership first, ahead of the expiry and replay checks: a state presented
+  // by someone other than its owner is evidence the link was handed to the
+  // wrong person, so it is burnt whatever else is true about it. The code is
+  // never exchanged — exchanging it would hand the victim's grant to the
+  // state's owner, which is the whole attack.
+  if (check.stored && check.stored.user_id !== me.userId) {
+    await burnState(presentedState);
+    throw forbidden(
+      "This authorization was started from a different TaskPilot account, so it cannot be " +
+        "completed here. Start the connection again from your own Integrations page."
+    );
+  }
+
+  if (!check.ok) {
+    if (check.reason.includes("already been used")) throw conflict(check.reason);
+    throw badRequest(check.reason);
+  }
+  const stored = check.stored;
 
   // Burn the state before the exchange. If the exchange fails the user
   // restarts the flow; leaving it live would allow a replay.
-  const { data: claimed, error: claimError } = await admin
-    .from("oauth_states")
-    .update({ consumed_at: new Date().toISOString() })
-    .eq("state", presentedState)
-    .is("consumed_at", null)
-    .select("state")
-    .maybeSingle();
+  const { data: claimed, error: claimError } = await burnState(presentedState);
 
   // A database fault and a lost race both leave `claimed` null, but they
   // need opposite advice: one is "try again", the other is "you cannot".
   // Reporting a transient fault as "already used" sends the user hunting
   // for a problem that is not theirs, and the state is in fact still live.
-  if (claimError) return fail(`Could not complete the authorization: ${claimError.message}`);
-
-  // Lost the race against a concurrent callback with the same state.
-  if (!claimed) return fail("This authorization link has already been used");
-
-  try {
-    const tokens = await hubspot.exchangeCode({ code, redirectUri: stored.redirect_uri });
-    const identity = await hubspot.identify(tokens.accessToken);
-
-    // onConflict on (user_id, provider) matches the unique index from 001,
-    // so reconnecting replaces the old grant rather than erroring.
-    const { error } = await admin.from("integrations").upsert(
-      {
-        user_id: stored.user_id,
-        provider,
-        access_token: encryptSecret(tokens.accessToken),
-        refresh_token: encryptSecret(tokens.refreshToken),
-        token_encrypted: true,
-        expires_at: tokens.expiresAt.toISOString(),
-        workspace_id: identity.hubId || null,
-        workspace_name: identity.hubDomain,
-        scopes: identity.scopes,
-        connected_at: new Date().toISOString(),
-        last_refreshed_at: new Date().toISOString(),
-        refresh_error: null,
-        metadata: { user: identity.user },
-      },
-      { onConflict: "user_id,provider" }
-    );
-
-    if (error) return fail(`Could not save the connection: ${error.message}`);
-
-    const destination = safeReturnTo(stored.return_to) ?? appUrl("/dashboard/integrations");
-    const separator = destination.includes("?") ? "&" : "?";
-    return c.redirect(`${destination}${separator}connected=${provider}`);
-  } catch (err) {
-    return fail(err instanceof ApiError ? err.message : "The token exchange failed");
+  if (claimError) {
+    throw new ApiError("internal_error", `Could not complete the authorization: ${claimError.message}`);
   }
+
+  // Lost the race against a concurrent completion with the same state.
+  if (!claimed) throw conflict("This authorization link has already been used");
+
+  let tokens: hubspot.TokenSet;
+  let identity: hubspot.HubSpotIdentity;
+  try {
+    // The redirect_uri recorded at /authorize, byte for byte — it is still
+    // the API callback the provider sent the browser to.
+    tokens = await hubspot.exchangeCode({ code, redirectUri: stored.redirect_uri });
+    identity = await hubspot.identify(tokens.accessToken);
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError("upstream_error", "The token exchange failed");
+  }
+
+  // onConflict on (user_id, provider) matches the unique index from 001,
+  // so reconnecting replaces the old grant rather than erroring.
+  const admin = getAdminClient();
+  const { error } = await admin.from("integrations").upsert(
+    {
+      user_id: me.userId,
+      provider,
+      access_token: encryptSecret(tokens.accessToken),
+      refresh_token: encryptSecret(tokens.refreshToken),
+      token_encrypted: true,
+      expires_at: tokens.expiresAt.toISOString(),
+      workspace_id: identity.hubId || null,
+      workspace_name: identity.hubDomain,
+      scopes: identity.scopes,
+      connected_at: new Date().toISOString(),
+      last_refreshed_at: new Date().toISOString(),
+      refresh_error: null,
+      metadata: { user: identity.user },
+    },
+    { onConflict: "user_id,provider" }
+  );
+
+  if (error) throw new ApiError("internal_error", `Could not save the connection: ${error.message}`);
+
+  return ok({
+    connected: provider,
+    workspace_id: identity.hubId || null,
+    workspace_name: identity.hubDomain,
+    scopes: identity.scopes,
+    // Re-validated on the way out: the allow-list may have changed since
+    // the flow started.
+    return_to: safeReturnTo(stored.return_to),
+  });
 });
 
 // ─── DISCONNECT ──────────────────────────────────────────────

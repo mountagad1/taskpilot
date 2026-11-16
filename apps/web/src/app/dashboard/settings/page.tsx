@@ -1,8 +1,54 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+
+import { useAuth } from '@/components/dashboard/auth-context'
+import { api, ApiRequestError } from '@/lib/client/api'
 
 export default function SettingsPage() {
+  const { plan } = useAuth()
+  const [billingBusy, setBillingBusy] = useState(false)
+  const [billingNotice, setBillingNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+
+  // Stripe sends the user back here with ?billing=success|canceled.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const outcome = params.get('billing')
+    if (!outcome) return
+    if (outcome === 'success') {
+      setBillingNotice({ tone: 'ok', text: 'Payment received — your plan updates within a few seconds.' })
+    } else if (outcome === 'canceled') {
+      setBillingNotice({ tone: 'error', text: 'Checkout was canceled. You have not been charged.' })
+    }
+    params.delete('billing')
+    params.delete('session_id')
+    const query = params.toString()
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
+  }, [])
+
+  /** Free plan → Stripe Checkout for Pro; anyone already subscribed → the Stripe portal. */
+  const openBilling = async () => {
+    setBillingBusy(true)
+    setBillingNotice(null)
+    try {
+      if (plan === 'free') {
+        try {
+          const { url } = await api.post<{ url: string }>('/v1/billing/subscribe', { plan: 'pro' })
+          window.location.assign(url)
+          return
+        } catch (err) {
+          // 409: a subscription already exists (e.g. plan not refreshed yet) — manage it instead.
+          if (!(err instanceof ApiRequestError && err.status === 409)) throw err
+        }
+      }
+      const { url } = await api.post<{ url: string }>('/v1/billing/portal')
+      window.location.assign(url)
+    } catch (err) {
+      setBillingNotice({ tone: 'error', text: err instanceof Error ? err.message : 'Billing is unavailable right now.' })
+      setBillingBusy(false)
+    }
+  }
+
   const [saved, setSaved] = useState(false)
   const [settings, setSettings] = useState({
     smartPasteAnimations: true,
@@ -163,15 +209,31 @@ export default function SettingsPage() {
           <h2 className="font-heading font-semibold text-sm text-foreground">Account</h2>
         </div>
         <div className="px-6 py-4 space-y-3">
+          {billingNotice && (
+            <p
+              role="status"
+              className="text-sm"
+              style={{ color: billingNotice.tone === 'ok' ? 'var(--success, #86efac)' : '#fca5a5' }}
+            >
+              {billingNotice.text}
+            </p>
+          )}
           <button
+            onClick={openBilling}
+            disabled={billingBusy}
             className="w-full text-left text-sm py-2.5 px-4 rounded-lg transition-all"
             style={{
               background: 'var(--surface)',
               border: '1px solid var(--border)',
               color: 'var(--foreground)',
+              opacity: billingBusy ? 0.6 : 1,
             }}
           >
-            Manage subscription (Stripe Portal) →
+            {billingBusy
+              ? 'Opening Stripe…'
+              : plan === 'free'
+                ? 'Upgrade to Pro (Stripe Checkout) →'
+                : 'Manage subscription (Stripe Portal) →'}
           </button>
           <button
             className="w-full text-left text-sm py-2.5 px-4 rounded-lg transition-all"

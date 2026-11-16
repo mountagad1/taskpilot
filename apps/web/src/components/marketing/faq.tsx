@@ -44,7 +44,7 @@ export const FAQS: FaqItem[] = [
   },
   {
     q: 'How much is Pro, and what does it add?',
-    a: 'Pro is $39.99 per month billed monthly, or $31.99 per month billed annually ($383.90 a year), and starts with a 7-day trial. It adds unlimited AI actions and exports, advanced field mapping, the full AI Sidebar, HubSpot and Notion integrations, Browser Actions and priority support.',
+    a: 'Pro is $39.99 per month billed monthly, or $31.99 per month billed annually ($383.90 a year), and starts with a 3-day free trial. It adds unlimited AI actions and exports, advanced field mapping, the full AI Sidebar, HubSpot and Notion integrations, Browser Actions and priority support.',
   },
   {
     q: 'Which sites does Smart Paste work on?',

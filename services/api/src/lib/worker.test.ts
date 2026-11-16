@@ -5,7 +5,24 @@
 
 import { describe, it, expect } from 'vitest'
 
-import { resolveBatchSize, DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE } from './worker'
+import { resolveBatchSize, vetScheduledRun, DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE } from './worker'
+
+describe('vetScheduledRun', () => {
+  it('pauses a schedule whose owner is now on the free plan', () => {
+    const verdict = vetScheduledRun({ plan: 'free', scheduled: true, actions: ['read_page'] })
+    expect(verdict?.pause).toBe(true)
+    expect(verdict?.reason).toMatch(/Pro plan/)
+  })
+
+  it('skips (without pausing) a run whose steps exceed the plan', () => {
+    const verdict = vetScheduledRun({ plan: 'free', scheduled: false, actions: ['read_page', 'screenshot'] })
+    expect(verdict).toEqual({ reason: expect.stringContaining('screenshot'), pause: false })
+  })
+
+  it('lets a Pro owner run Pro steps on a schedule', () => {
+    expect(vetScheduledRun({ plan: 'pro', scheduled: true, actions: ['read_page', 'screenshot', 'finish'] })).toBeNull()
+  })
+})
 
 describe('resolveBatchSize', () => {
   it('passes a sensible value through', () => {

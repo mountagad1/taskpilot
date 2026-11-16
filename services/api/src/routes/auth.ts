@@ -178,12 +178,30 @@ authRoutes.post("/logout", guard({ rateLimit: 60 }), async (c) => {
 
 // ─── PASSWORD RESET ──────────────────────────────────────────
 
+/**
+ * Where the reset email's link lands. It carries a recovery access token in
+ * its URL hash, so it must only ever point at our own web app: a client
+ * value is honoured only if it is on PUBLIC_APP_URL's origin. Supabase's
+ * redirect allow-list is a second layer, not the only one.
+ */
+export function resetRedirectFor(requested: unknown): string {
+  const appOrigin = (process.env.PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+  const fallback = `${appOrigin}/auth/update-password`;
+  if (typeof requested !== "string" || !requested) return fallback;
+  try {
+    const url = new URL(requested);
+    return url.origin === new URL(appOrigin).origin ? url.toString() : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 authRoutes.post("/reset-password", guard({ auth: false, rateLimit: 10 }), async (c) => {
   assertConfigured();
 
   const body = await readJson(c);
   const email = String(body.email ?? "").trim().toLowerCase();
-  const redirectTo = typeof body.redirect_to === "string" ? body.redirect_to : undefined;
+  const redirectTo = resetRedirectFor(body.redirect_to);
 
   if (!EMAIL_RE.test(email)) {
     throw validationFailed([{ path: "email", message: "Enter a valid email address" }]);

@@ -152,7 +152,7 @@ serve(async (req: Request) => {
     const { task_type, input, context, model_override } = body;
 
     // ── Cache Check ──────────────────────────────────────────
-    const cacheKey = buildCacheKey(task_type, input, context);
+    const cacheKey = await buildCacheKey(identifier, task_type, input, context, model_override);
     const cached = await getCached(cacheKey);
     if (cached) {
       return new Response(
@@ -266,19 +266,23 @@ function selectModel(taskType: string, plan: string, override?: string): string 
   return "gpt-4o-mini"; // Default for cost efficiency
 }
 
-function buildCacheKey(taskType: string, input: string, context: Record<string, string>): string {
-  const hash = simpleHash(`${taskType}:${(input || "").slice(0, 100)}:${context?.url || ""}:${(context?.visible_text || "").slice(0, 200)}`);
-  return `ai:${taskType}:${hash}`;
-}
-
-function simpleHash(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(36);
+/**
+ * SHA-256 over the caller's identity and the FULL request. The old key used a
+ * 32-bit hash of the first 100/200 characters and no identity, so two users on
+ * the same URL shared answers about their private pages, and a crafted input
+ * could collide with someone else's key.
+ */
+async function buildCacheKey(
+  identifier: string,
+  taskType: string,
+  input: string,
+  context: Record<string, unknown>,
+  modelOverride?: string
+): Promise<string> {
+  const material = JSON.stringify([identifier, taskType, modelOverride ?? "", input ?? "", context ?? {}]);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material));
+  const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  return `ai:${taskType}:${hex}`;
 }
 
 function optimizeContext(context: Record<string, unknown>, taskType: string): Record<string, unknown> {

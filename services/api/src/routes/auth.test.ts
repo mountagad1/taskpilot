@@ -96,3 +96,23 @@ describe('session-creating auth calls', () => {
     }
   })
 })
+
+describe('password-reset redirect', () => {
+  it('only sends recovery links to our own web app', async () => {
+    const { resetRedirectFor } = await import('./auth')
+    const saved = process.env.PUBLIC_APP_URL
+    process.env.PUBLIC_APP_URL = 'https://taskpilot.cc'
+    try {
+      expect(resetRedirectFor(undefined)).toBe('https://taskpilot.cc/auth/update-password')
+      expect(resetRedirectFor('https://taskpilot.cc/auth/update-password?x=1')).toBe(
+        'https://taskpilot.cc/auth/update-password?x=1'
+      )
+      expect(resetRedirectFor('https://evil.example/steal')).toBe('https://taskpilot.cc/auth/update-password')
+      expect(resetRedirectFor('https://taskpilot.cc.evil.example/')).toBe('https://taskpilot.cc/auth/update-password')
+      expect(resetRedirectFor('not a url')).toBe('https://taskpilot.cc/auth/update-password')
+    } finally {
+      if (saved === undefined) delete process.env.PUBLIC_APP_URL
+      else process.env.PUBLIC_APP_URL = saved
+    }
+  })
+})

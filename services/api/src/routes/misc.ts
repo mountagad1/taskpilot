@@ -7,10 +7,20 @@ import { Hono } from "hono";
 
 import { getAdminClient, hasStripeCredentials, hasSupabaseCredentials } from "../lib/clients";
 import { createAgentCheckout } from "../lib/marketplace";
-import { handleWebhookEvent } from "../lib/billing";
+import {
+  WebhookSignatureError,
+  appOrigin,
+  createCheckoutSession,
+  createPortalSession,
+  handleWebhookEvent,
+  hasEverSubscribed,
+  hasLiveSubscription,
+  priceForPlan,
+  proTrialDays,
+} from "../lib/billing";
 import { processJobs } from "../lib/worker";
 import { getSemanticCache, providerRouterFromEnv } from "../runtime";
-import { ApiError, badRequest, notConfigured, ok, validationFailed } from "../lib/errors";
+import { ApiError, badRequest, conflict, notConfigured, ok, validationFailed } from "../lib/errors";
 import { caller, guard, readJson, query } from "../middleware/kernel";
 import { toRows, toCSV, toJSON } from "@taskpilot/browser-tools/export";
 import { SmartPasteEngine } from "@taskpilot/browser-tools/smart-paste";
@@ -258,18 +268,25 @@ aiRoutes.post("/process", guard({ rateLimit: 60 }), async (c) => {
   };
 
   const prompt = builder(promptContext);
+  const model = task === "custom" || task === "generate_reply" ? "gpt-4.1" : "gpt-4.1-mini";
+
   const cache = getSemanticCache();
   const cacheKey = cache.generateKey({
+    scope: me.userId,
     task,
+    model,
     pageContent: content,
     userInput: promptContext.question,
     url: String(pageContext.url ?? ""),
+    options: {
+      instruction: promptContext.instruction,
+      tone: promptContext.tone,
+      target_language: promptContext.target_language,
+    },
   });
 
   const cached = await cache.get(cacheKey);
   if (cached) return ok({ result: cached, cached: true, task });
-
-  const model = task === "custom" || task === "generate_reply" ? "gpt-4.1" : "gpt-4.1-mini";
 
   const response = await router.complete({
     model,
@@ -373,17 +390,80 @@ billingRoutes.post("/checkout", guard({ rateLimit: 20 }), async (c) => {
   if (!agentId) throw badRequest("An agentId is required");
   if (!hasStripeCredentials()) throw notConfigured("Billing is not configured for this deployment");
 
-  const origin = c.req.header("origin") ?? process.env.PUBLIC_APP_URL ?? "https://taskpilot.cc";
-
+  // Never the request's Origin header: the buyer lands on this URL after
+  // paying, so a caller-supplied origin would be an open redirect.
   const result = await createAgentCheckout({
     agentId,
     buyerId: me.userId,
     buyerEmail: me.email,
-    origin,
+    appOrigin: appOrigin(),
   });
 
   if ("error" in result) throw new ApiError(statusToCode(result.status), result.error);
   return ok(result);
+});
+
+/**
+ * Starts a subscription Checkout. Body: { plan: "pro" | "enterprise",
+ * interval?: "monthly" | "annual" }. Returns { url } to redirect the browser
+ * to. Session-only: a machine key must not be able to start a subscription.
+ */
+billingRoutes.post("/subscribe", guard({ allow: ["session"], rateLimit: 10 }), async (c) => {
+  const me = caller(c);
+  const body = await readJson(c);
+
+  const plan = body.plan;
+  if (plan !== "pro" && plan !== "enterprise") throw badRequest('plan must be "pro" or "enterprise"');
+
+  const interval = body.interval ?? "monthly";
+  if (interval !== "monthly" && interval !== "annual") {
+    throw badRequest('interval must be "monthly" or "annual"');
+  }
+  if (plan === "enterprise" && interval === "annual") {
+    throw badRequest("Enterprise is billed monthly");
+  }
+
+  if (!hasStripeCredentials()) throw notConfigured("Billing is not configured for this deployment");
+
+  const priceId = priceForPlan(plan, interval);
+  if (!priceId) throw notConfigured(`The ${plan} ${interval} plan is not available on this deployment`);
+
+  // A second Checkout would create a second, parallel subscription; plan
+  // changes and cancellation go through the portal instead.
+  if (await hasLiveSubscription(me.userId)) {
+    throw conflict("You already have an active subscription. Use the billing portal to change plans.");
+  }
+
+  // One trial per user, Pro only. Enterprise is sold through sales.
+  const trialDays = plan === "pro" && !(await hasEverSubscribed(me.userId)) ? proTrialDays() : 0;
+
+  const app = appOrigin();
+  const { url } = await createCheckoutSession({
+    userId: me.userId,
+    email: me.email,
+    priceId,
+    trialDays,
+    successUrl: `${app}/dashboard/settings?billing=success`,
+    cancelUrl: `${app}/dashboard/settings?billing=canceled`,
+  });
+
+  return ok({ url });
+});
+
+/**
+ * Opens the Stripe customer portal (change plan, payment method, invoices,
+ * cancel). No body. Returns { url }. 404 if the user has never subscribed.
+ */
+billingRoutes.post("/portal", guard({ allow: ["session"], rateLimit: 20 }), async (c) => {
+  const me = caller(c);
+  if (!hasStripeCredentials()) throw notConfigured("Billing is not configured for this deployment");
+
+  const { url } = await createPortalSession({
+    userId: me.userId,
+    returnUrl: `${appOrigin()}/dashboard/settings`,
+  });
+
+  return ok({ url });
 });
 
 /**
@@ -400,13 +480,18 @@ billingRoutes.post("/webhook", async (c) => {
   // re-serialising would invalidate the signature.
   const raw = await c.req.text();
 
+  // A bad signature is the caller's fault (400). Any other failure is ours
+  // and propagates as a 5xx so Stripe retries the delivery — the event's
+  // idempotency claim was released, so the retry is processed afresh.
+  let result: { duplicate: boolean };
   try {
-    await handleWebhookEvent(raw, signature);
+    result = await handleWebhookEvent(raw, signature);
   } catch (err) {
-    throw badRequest(err instanceof Error ? err.message : "Webhook verification failed");
+    if (err instanceof WebhookSignatureError) throw badRequest(err.message);
+    throw err;
   }
 
-  return ok({ received: true });
+  return ok({ received: true, duplicate: result.duplicate });
 });
 
 function statusToCode(status: number) {

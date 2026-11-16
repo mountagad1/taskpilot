@@ -355,7 +355,10 @@ export type SubscriptionStatus =
   | "trialing"
   | "past_due"
   | "canceled"
-  | "unpaid";
+  | "unpaid"
+  | "incomplete"
+  | "incomplete_expired"
+  | "paused";
 
 export const PLAN_LIMITS: Record<PlanType, UserUsage> = {
   free: {

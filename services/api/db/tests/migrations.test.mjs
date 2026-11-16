@@ -51,6 +51,7 @@ describe('migrations apply', () => {
       '006_platform.sql',
       '007_oauth.sql',
       '008_security_hardening.sql',
+      '009_billing_idempotency.sql',
     ])
   })
 
@@ -1476,5 +1477,37 @@ describe('security hardening (008)', () => {
       )
       expect(read.rows.map((r) => r.title)).toContain('Original title')
     })
+  })
+})
+
+// ─── BILLING (009) ───────────────────────────────────────────
+
+describe('billing idempotency and statuses (009)', () => {
+  it('stores every subscription status Stripe can report', async () => {
+    for (const status of [
+      'active', 'trialing', 'past_due', 'canceled', 'unpaid',
+      'incomplete', 'incomplete_expired', 'paused',
+    ]) {
+      await db.query(
+        `INSERT INTO subscriptions (user_id, stripe_subscription_id, plan, status)
+         VALUES ($1, $2, 'pro', $3)`,
+        [alice, `sub_009_${status}`, status]
+      )
+    }
+    const { rows } = await db.query(
+      `SELECT COUNT(*)::int AS n FROM subscriptions WHERE stripe_subscription_id LIKE 'sub_009_%'`
+    )
+    expect(rows[0].n).toBe(8)
+  })
+
+  it('rejects a second billing_events row for the same Stripe event id', async () => {
+    await db.query(
+      `INSERT INTO billing_events (stripe_event_id, event_type) VALUES ('evt_dup_009', 'customer.subscription.updated')`
+    )
+    await expect(
+      db.query(
+        `INSERT INTO billing_events (stripe_event_id, event_type) VALUES ('evt_dup_009', 'customer.subscription.updated')`
+      )
+    ).rejects.toThrow(/duplicate key|unique/i)
   })
 })

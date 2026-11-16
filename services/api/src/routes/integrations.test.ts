@@ -8,9 +8,11 @@
 // encryption all execute.
 //
 // The callback deserves the most attention. It is unauthenticated by
-// necessity — the provider redirects a browser to it — so `state` is the
-// only thing standing between a user's CRM and anyone who can make them
-// load a URL.
+// necessity — the provider redirects a browser to it — so it must not be
+// able to bind a grant to anyone. Completion happens through an
+// authenticated endpoint that only the user who started the flow can use;
+// otherwise an attacker could send their own consent URL to a victim and
+// collect the victim's CRM tokens on the attacker's account.
 // ============================================================
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
@@ -27,6 +29,8 @@ const tables: Record<string, Row[]> = { oauth_states: [], integrations: [], prof
 
 const USER_ID = '11111111-1111-4111-8111-111111111111'
 const SESSION_TOKEN = 'session-token-for-tests'
+const OTHER_USER_ID = '22222222-2222-4222-8222-222222222222'
+const OTHER_SESSION_TOKEN = 'other-session-token-for-tests'
 
 function matches(row: Row, filters: Array<[string, any]>, isNull: Array<[string, any]>) {
   return (
@@ -142,7 +146,9 @@ const fakeAdmin = {
       Promise.resolve(
         token === SESSION_TOKEN
           ? { data: { user: { id: USER_ID, email: 'ops@acme.test' } }, error: null }
-          : { data: { user: null }, error: { message: 'invalid token' } }
+          : token === OTHER_SESSION_TOKEN
+            ? { data: { user: { id: OTHER_USER_ID, email: 'victim@other.test' } }, error: null }
+            : { data: { user: null }, error: { message: 'invalid token' } }
       ),
   },
 }
@@ -161,6 +167,8 @@ vi.mock('../lib/clients', async (importOriginal) => {
 let server: Server
 let tokenStatus = 200
 let tokenBody: Row = {}
+/** Every form body POSTed to the token endpoint, in order. */
+let tokenRequests: URLSearchParams[] = []
 
 function json(res: ServerResponse, status: number, payload: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -168,10 +176,14 @@ function json(res: ServerResponse, status: number, payload: unknown) {
 }
 
 beforeAll(async () => {
-  server = createServer((req, res) => {
+  server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost')
 
     if (url.pathname === '/oauth/v1/token') {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(chunk as Buffer)
+      tokenRequests.push(new URLSearchParams(Buffer.concat(chunks).toString('utf8')))
+
       return json(res, tokenStatus, tokenStatus === 200
         ? { access_token: 'hs-access', refresh_token: 'hs-refresh', expires_in: 1800, ...tokenBody }
         : { message: 'invalid authorization code' })
@@ -213,11 +225,13 @@ const app = createApp()
 const call = (path: string, init?: RequestInit) =>
   app.request(new Request(`http://api.test${path}`, init))
 
-const authed = (path: string, init: RequestInit = {}) =>
+const authedAs = (token: string, path: string, init: RequestInit = {}) =>
   call(path, {
     ...init,
-    headers: { Authorization: `Bearer ${SESSION_TOKEN}`, 'Content-Type': 'application/json', ...(init.headers ?? {}) },
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(init.headers ?? {}) },
   })
+
+const authed = (path: string, init: RequestInit = {}) => authedAs(SESSION_TOKEN, path, init)
 
 const body = async <T = any>(r: Response): Promise<T> => (await r.json()) as T
 
@@ -227,19 +241,40 @@ beforeEach(() => {
   resetRateLimits()
   tables.oauth_states = []
   tables.integrations = []
-  tables.profiles = [{ id: USER_ID, email: 'ops@acme.test', plan: 'pro' }]
+  tables.profiles = [
+    { id: USER_ID, email: 'ops@acme.test', plan: 'pro' },
+    { id: OTHER_USER_ID, email: 'victim@other.test', plan: 'pro' },
+  ]
   tokenStatus = 200
   tokenBody = {}
+  tokenRequests = []
 })
 
 /** Runs the authorize step and returns the state it minted. */
-async function startFlow(): Promise<string> {
-  const response = await authed('/v1/integrations/hubspot/authorize', {
+async function startFlow(token = SESSION_TOKEN): Promise<string> {
+  const response = await authedAs(token, '/v1/integrations/hubspot/authorize', {
     method: 'POST',
     body: JSON.stringify({}),
   })
   expect(response.status).toBe(200)
   return (await body(response)).data.state
+}
+
+/** The second half of the flow, as the dashboard performs it. */
+const complete = (state: string, code = 'good-code', token = SESSION_TOKEN) =>
+  authedAs(token, '/v1/integrations/hubspot/complete', {
+    method: 'POST',
+    body: JSON.stringify({ state, code }),
+  })
+
+/** Full happy path: authorize, provider redirect, dashboard completion. */
+async function connect(token = SESSION_TOKEN) {
+  const state = await startFlow(token)
+  const callback = await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
+  expect(callback.status).toBe(302)
+  const response = await complete(state, 'good-code', token)
+  expect(response.status).toBe(200)
+  return response
 }
 
 // ─── STATUS ──────────────────────────────────────────────────
@@ -329,30 +364,40 @@ describe('POST /v1/integrations/:provider/authorize', () => {
 // ─── CALLBACK ────────────────────────────────────────────────
 
 describe('GET /v1/integrations/:provider/callback', () => {
-  it('completes the exchange and stores an encrypted connection', async () => {
+  it('forwards state and code to the dashboard without storing anything', async () => {
     const state = await startFlow()
     const response = await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
 
     expect(response.status).toBe(302)
-    expect(response.headers.get('location')).toContain('connected=hubspot')
+    const location = new URL(response.headers.get('location')!)
+    expect(location.origin + location.pathname).toBe('http://app.test/dashboard/integrations')
+    expect(location.searchParams.get('provider')).toBe('hubspot')
+    expect(location.searchParams.get('state')).toBe(state)
+    expect(location.searchParams.get('code')).toBe('good-code')
 
-    const row = tables.integrations[0]
-    expect(row.user_id).toBe(USER_ID)
-    expect(row.workspace_id).toBe('24680135')
-    expect(row.scopes).toContain('crm.objects.contacts.write')
-    expect(row.token_encrypted).toBe(true)
+    // The unauthenticated leg binds nothing: no exchange, no row, and the
+    // state stays live for the authenticated completion.
+    expect(tokenRequests).toHaveLength(0)
+    expect(tables.integrations).toHaveLength(0)
+    expect(tables.oauth_states[0].consumed_at ?? null).toBeNull()
   })
 
-  it('never stores a token in plaintext', async () => {
+  it('does not leak the code through a Referer header', async () => {
     const state = await startFlow()
-    await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
+    const response = await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer')
+  })
 
-    const row = tables.integrations[0]
-    expect(row.access_token).not.toContain('hs-access')
-    expect(row.refresh_token).not.toContain('hs-refresh')
-    expect(row.access_token.startsWith('v1:')).toBe(true)
-    // Whole-row scan: no field may carry the raw credential.
-    expect(JSON.stringify(row)).not.toContain('hs-refresh')
+  it('forwards to the integrations page even when a return_to was given', async () => {
+    // Only that page knows how to finish the flow; it forwards afterwards.
+    await authed('/v1/integrations/hubspot/authorize', {
+      method: 'POST',
+      body: JSON.stringify({ return_to: 'http://app.test/dashboard/workflows' }),
+    })
+    const state = tables.oauth_states[0].state
+
+    const response = await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
+    expect(response.headers.get('location')).toMatch(/^http:\/\/app\.test\/dashboard\/integrations\?/)
   })
 
   it('rejects a state that was never issued', async () => {
@@ -362,15 +407,13 @@ describe('GET /v1/integrations/:provider/callback', () => {
     expect(tables.integrations).toHaveLength(0)
   })
 
-  it('refuses to replay a state that was already consumed', async () => {
+  it('refuses a state that was already consumed', async () => {
     const state = await startFlow()
-    await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
+    expect((await complete(state)).status).toBe(200)
 
-    tables.integrations = [] // prove the second attempt writes nothing
     const replay = await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
-
     expect(decodeURIComponent(replay.headers.get('location')!)).toMatch(/already been used/)
-    expect(tables.integrations).toHaveLength(0)
+    expect(new URL(replay.headers.get('location')!).searchParams.get('code')).toBeNull()
   })
 
   it('rejects an expired state', async () => {
@@ -403,33 +446,164 @@ describe('GET /v1/integrations/:provider/callback', () => {
     const response = await call(`/v1/integrations/hubspot/callback?state=${state}`)
     expect(decodeURIComponent(response.headers.get('location')!)).toMatch(/missing its state or code/)
   })
+})
+
+// ─── COMPLETE ────────────────────────────────────────────────
+
+describe('POST /v1/integrations/:provider/complete', () => {
+  it('requires authentication', async () => {
+    const state = await startFlow()
+    const response = await call('/v1/integrations/hubspot/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state, code: 'good-code' }),
+    })
+    expect(response.status).toBe(401)
+    expect(tokenRequests).toHaveLength(0)
+    expect(tables.oauth_states[0].consumed_at ?? null).toBeNull()
+  })
+
+  it('completes the exchange for the user who started the flow', async () => {
+    const state = await startFlow()
+    const response = await complete(state)
+
+    expect(response.status).toBe(200)
+    const payload = await body(response)
+    expect(payload.data.connected).toBe('hubspot')
+    expect(payload.data.workspace_name).toBe('acme-staging.hubspot.com')
+
+    const row = tables.integrations[0]
+    expect(row.user_id).toBe(USER_ID)
+    expect(row.workspace_id).toBe('24680135')
+    expect(row.scopes).toContain('crm.objects.contacts.write')
+    expect(row.token_encrypted).toBe(true)
+    expect(tables.oauth_states[0].consumed_at).toBeTruthy()
+  })
+
+  it('sends the token endpoint the exact redirect_uri used at authorize', async () => {
+    const authorize = await body(
+      await authed('/v1/integrations/hubspot/authorize', { method: 'POST', body: '{}' })
+    )
+    const sentToConsent = new URL(authorize.data.authorize_url).searchParams.get('redirect_uri')
+
+    await complete(authorize.data.state)
+
+    expect(tokenRequests).toHaveLength(1)
+    expect(tokenRequests[0].get('redirect_uri')).toBe(sentToConsent)
+    expect(tokenRequests[0].get('redirect_uri')).toBe('http://api.test/v1/integrations/hubspot/callback')
+    expect(tokenRequests[0].get('code')).toBe('good-code')
+  })
+
+  it('never stores a token in plaintext', async () => {
+    await connect()
+
+    const row = tables.integrations[0]
+    expect(row.access_token).not.toContain('hs-access')
+    expect(row.refresh_token).not.toContain('hs-refresh')
+    expect(row.access_token.startsWith('v1:')).toBe(true)
+    // Whole-row scan: no field may carry the raw credential.
+    expect(JSON.stringify(row)).not.toContain('hs-refresh')
+  })
+
+  it('rejects a different user, without exchanging the code, and burns the state', async () => {
+    // The attack: USER starts a flow and hands the consent URL to a victim
+    // (OTHER). The victim approves and their browser completes the flow
+    // under their own session.
+    const attackerState = await startFlow(SESSION_TOKEN)
+    const callback = await call(`/v1/integrations/hubspot/callback?code=victim-code&state=${attackerState}`)
+    expect(callback.status).toBe(302)
+
+    const response = await complete(attackerState, 'victim-code', OTHER_SESSION_TOKEN)
+
+    expect(response.status).toBe(403)
+    expect((await body(response)).error.message).toMatch(/different TaskPilot account/)
+    expect(tokenRequests).toHaveLength(0)
+    expect(tables.integrations).toHaveLength(0)
+    expect(tables.oauth_states[0].consumed_at).toBeTruthy()
+
+    // Not even the state's owner can use it now — the attacker cannot
+    // replay the victim's code under their own session.
+    const retry = await complete(attackerState, 'victim-code', SESSION_TOKEN)
+    expect(retry.status).toBe(409)
+    expect(tokenRequests).toHaveLength(0)
+    expect(tables.integrations).toHaveLength(0)
+  })
+
+  it('is single-use', async () => {
+    const state = await startFlow()
+    expect((await complete(state)).status).toBe(200)
+
+    tables.integrations = [] // prove the second attempt writes nothing
+    const replay = await complete(state)
+
+    expect(replay.status).toBe(409)
+    expect((await body(replay)).error.message).toMatch(/already been used/)
+    expect(tokenRequests).toHaveLength(1)
+    expect(tables.integrations).toHaveLength(0)
+  })
+
+  it('rejects a state that was never issued', async () => {
+    const response = await complete('fabricated')
+    expect(response.status).toBe(400)
+    expect((await body(response)).error.message).toMatch(/not recognised/)
+    expect(tokenRequests).toHaveLength(0)
+  })
+
+  it('rejects an expired state without exchanging the code', async () => {
+    const state = await startFlow()
+    tables.oauth_states[0].expires_at = new Date(Date.now() - 1000).toISOString()
+
+    const response = await complete(state)
+    expect(response.status).toBe(400)
+    expect((await body(response)).error.message).toMatch(/expired/)
+    expect(tokenRequests).toHaveLength(0)
+    expect(tables.integrations).toHaveLength(0)
+  })
+
+  it('rejects a state issued for a different provider', async () => {
+    const state = await startFlow()
+    tables.oauth_states[0].provider = 'salesforce'
+
+    const response = await complete(state)
+    expect(response.status).toBe(400)
+    expect((await body(response)).error.message).toMatch(/different provider/)
+    expect(tokenRequests).toHaveLength(0)
+  })
+
+  it('requires both state and code', async () => {
+    const state = await startFlow()
+    const response = await authed('/v1/integrations/hubspot/complete', {
+      method: 'POST',
+      body: JSON.stringify({ state }),
+    })
+    expect(response.status).toBe(400)
+    expect(tables.oauth_states[0].consumed_at ?? null).toBeNull()
+  })
 
   it('consumes the state even when the exchange fails, so it cannot be retried', async () => {
     const state = await startFlow()
     tokenStatus = 400
 
-    const response = await call(`/v1/integrations/hubspot/callback?code=stale&state=${state}`)
-    expect(decodeURIComponent(response.headers.get('location')!)).toMatch(/invalid authorization code/)
+    const response = await complete(state, 'stale')
+    expect(response.status).toBe(502)
+    expect((await body(response)).error.message).toMatch(/invalid authorization code/)
     expect(tables.oauth_states[0].consumed_at).toBeTruthy()
     expect(tables.integrations).toHaveLength(0)
   })
 
-  it('returns the user to a permitted return_to', async () => {
+  it('returns a permitted return_to for the dashboard to forward to', async () => {
     await authed('/v1/integrations/hubspot/authorize', {
       method: 'POST',
       body: JSON.stringify({ return_to: 'http://app.test/dashboard/workflows' }),
     })
     const state = tables.oauth_states[0].state
 
-    const response = await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
-    expect(response.headers.get('location')).toBe('http://app.test/dashboard/workflows?connected=hubspot')
+    const payload = await body(await complete(state))
+    expect(payload.data.return_to).toBe('http://app.test/dashboard/workflows')
   })
 
   it('reconnecting replaces the existing grant rather than duplicating it', async () => {
-    for (let i = 0; i < 2; i++) {
-      const state = await startFlow()
-      await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
-    }
+    for (let i = 0; i < 2; i++) await connect()
     expect(tables.integrations).toHaveLength(1)
   })
 })
@@ -438,8 +612,7 @@ describe('GET /v1/integrations/:provider/callback', () => {
 
 describe('GET /v1/integrations', () => {
   it('lists connections without exposing tokens', async () => {
-    const state = await startFlow()
-    await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
+    await connect()
 
     const response = await authed('/v1/integrations')
     const raw = await response.text()
@@ -455,8 +628,7 @@ describe('GET /v1/integrations', () => {
   })
 
   it('flags a connection whose refresh has failed', async () => {
-    const state = await startFlow()
-    await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
+    await connect()
     tables.integrations[0].refresh_error = 'refresh token is invalid'
 
     const payload = await body(await authed('/v1/integrations'))
@@ -472,11 +644,6 @@ describe('GET /v1/integrations', () => {
 // ─── PUSH ────────────────────────────────────────────────────
 
 describe('POST /v1/integrations/:provider/push', () => {
-  async function connect() {
-    const state = await startFlow()
-    await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
-  }
-
   it('pushes records through the stored connection', async () => {
     await connect()
     const payload = await body(
@@ -564,8 +731,7 @@ describe('POST /v1/integrations/:provider/push', () => {
 
 describe('DELETE /v1/integrations/:provider', () => {
   it('removes the stored grant', async () => {
-    const state = await startFlow()
-    await call(`/v1/integrations/hubspot/callback?code=good-code&state=${state}`)
+    await connect()
 
     const response = await authed('/v1/integrations/hubspot', { method: 'DELETE' })
     expect(response.status).toBe(200)

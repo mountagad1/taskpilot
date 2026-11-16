@@ -9,7 +9,9 @@
 //   * The token endpoint takes form-encoded parameters, not JSON. Sending
 //     JSON returns 400 with a message that does not mention the encoding.
 //   * It is a confidential-client flow: client_secret is required and PKCE
-//     is not supported, so `state` carries the whole CSRF burden.
+//     is not documented for this flow. CSRF protection is therefore the
+//     single-use `state` plus completing the flow only from the session of
+//     the user who minted it (see routes/integrations.ts).
 //   * Access tokens live ~30 minutes. Refresh tokens do not expire on their
 //     own, which is exactly why they are encrypted at rest.
 //   * The granted scopes come back from the token-info endpoint, not the

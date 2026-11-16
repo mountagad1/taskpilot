@@ -11,10 +11,12 @@
 // ============================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { JobType } from "@taskpilot/shared";
+import { gateCapabilities, type BrowserActionType, type JobType, type PlanType } from "@taskpilot/shared";
 
 import { getAdminClient } from "./clients";
 import { nextCronRun } from "./cron";
+import { ApiError } from "./errors";
+import { assertWithinPlanLimits, resolveAgentForRun } from "./runs";
 
 export interface JobRow {
   id: string;
@@ -62,6 +64,53 @@ const runScheduledWorkflow: JobHandler = async (job, db) => {
 
   const steps = Array.isArray(workflow.steps) ? workflow.steps : [];
 
+  // Advance the schedule BEFORE creating anything, and fail loudly if that
+  // write fails. It used to happen last with its error ignored: one failed
+  // update left next_run_at in the past, and every tick created another run.
+  const { error: advanceError } = await db
+    .from("workflows")
+    .update({
+      last_run_at: new Date().toISOString(),
+      next_run_at: workflow.schedule_cron ? nextCronRun(workflow.schedule_cron).toISOString() : null,
+    })
+    .eq("id", workflowId);
+  if (advanceError) throw new Error(`Could not advance workflow ${workflowId}: ${advanceError.message}`);
+
+  // Re-check the owner's entitlements at run time — the same gates POST /runs
+  // applies. A schedule saved on Pro must not keep running after a downgrade,
+  // and stored steps must not exceed the plan or the monthly quota.
+  const { data: profile } = await db.from("profiles").select("plan").eq("id", workflow.user_id).maybeSingle();
+  const plan = ((profile?.plan as PlanType | undefined) ?? "free") as PlanType;
+  const owner = { userId: workflow.user_id as string, plan };
+
+  let refusal = vetScheduledRun({
+    plan,
+    scheduled: Boolean(workflow.schedule_cron),
+    actions: steps.map((s: { action?: { type?: string } }) => s.action?.type ?? "finish") as BrowserActionType[],
+  });
+  if (!refusal) {
+    try {
+      await assertWithinPlanLimits(owner);
+      if (workflow.agent_id) await resolveAgentForRun(owner, workflow.agent_id);
+    } catch (err) {
+      if (!(err instanceof ApiError)) throw err;
+      refusal = { reason: err.message, pause: false };
+    }
+  }
+
+  if (refusal) {
+    // A paused schedule stays paused until the user upgrades and re-saves it.
+    if (refusal.pause) await db.from("workflows").update({ next_run_at: null }).eq("id", workflowId);
+    await notifyBestEffort(db, {
+      target_user: workflow.user_id,
+      kind: "run_failed",
+      subject: `${workflow.name} did not run`,
+      message: refusal.reason,
+      deep_link: "/dashboard/workflows",
+    });
+    return;
+  }
+
   const { data: run } = await db
     .from("agent_runs")
     .insert({
@@ -94,18 +143,18 @@ const runScheduledWorkflow: JobHandler = async (job, db) => {
     if (rows.length) await db.from("agent_run_steps").insert(rows);
   }
 
+  // Bookkeeping only. Errors here must not fail the job: a retry would create
+  // a second run for the same occurrence.
   await db
     .from("workflows")
-    .update({
-      run_count: (await currentRunCount(db, workflowId)) + 1,
-      last_run_at: new Date().toISOString(),
-      // Schedule the following occurrence now, so a worker outage doesn't
-      // leave the workflow permanently unscheduled.
-      next_run_at: workflow.schedule_cron ? nextCronRun(workflow.schedule_cron).toISOString() : null,
-    })
-    .eq("id", workflowId);
+    .update({ run_count: (await currentRunCount(db, workflowId)) + 1 })
+    .eq("id", workflowId)
+    .then(
+      () => undefined,
+      () => undefined
+    );
 
-  await db.rpc("notify_user", {
+  await notifyBestEffort(db, {
     target_user: workflow.user_id,
     kind: "run_completed",
     subject: `${workflow.name} is queued`,
@@ -113,6 +162,40 @@ const runScheduledWorkflow: JobHandler = async (job, db) => {
     deep_link: run ? `/dashboard/runs/${run.id}` : "/dashboard/workflows",
   });
 };
+
+/**
+ * The plan checks a scheduled run must pass, kept pure for testing. Returns
+ * null when it may run; otherwise why not, and whether to pause the schedule
+ * (a plan that no longer includes scheduling) or just skip this occurrence.
+ */
+export function vetScheduledRun(input: {
+  plan: PlanType;
+  scheduled: boolean;
+  actions: BrowserActionType[];
+}): { reason: string; pause: boolean } | null {
+  if (input.scheduled && input.plan === "free") {
+    return {
+      reason: "Scheduled workflows need the Pro plan. The schedule is paused — upgrade and save it again to resume.",
+      pause: true,
+    };
+  }
+  const { blocked } = gateCapabilities(input.actions, input.plan);
+  if (blocked.length) {
+    return {
+      reason: `This workflow uses ${[...new Set(blocked)].join(", ")}, which your plan does not include.`,
+      pause: false,
+    };
+  }
+  return null;
+}
+
+async function notifyBestEffort(db: SupabaseClient, args: Record<string, unknown>): Promise<void> {
+  try {
+    await db.rpc("notify_user", args);
+  } catch {
+    // A missed notification must not fail (and so re-run) the job.
+  }
+}
 
 async function currentRunCount(db: SupabaseClient, workflowId: string): Promise<number> {
   const { data } = await db.from("workflows").select("run_count").eq("id", workflowId).maybeSingle();
