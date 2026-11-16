@@ -13,8 +13,10 @@ import {
   createCheckoutSession,
   createPortalSession,
   handleWebhookEvent,
+  hasEverSubscribed,
   hasLiveSubscription,
   priceForPlan,
+  proTrialDays,
 } from "../lib/billing";
 import { processJobs } from "../lib/worker";
 import { getSemanticCache, providerRouterFromEnv } from "../runtime";
@@ -432,11 +434,15 @@ billingRoutes.post("/subscribe", guard({ allow: ["session"], rateLimit: 10 }), a
     throw conflict("You already have an active subscription. Use the billing portal to change plans.");
   }
 
+  // One trial per user, Pro only. Enterprise is sold through sales.
+  const trialDays = plan === "pro" && !(await hasEverSubscribed(me.userId)) ? proTrialDays() : 0;
+
   const app = appOrigin();
   const { url } = await createCheckoutSession({
     userId: me.userId,
     email: me.email,
     priceId,
+    trialDays,
     successUrl: `${app}/dashboard/settings?billing=success`,
     cancelUrl: `${app}/dashboard/settings?billing=canceled`,
   });

@@ -112,6 +112,38 @@ function withQuery(url: string, query: string): string {
   return `${url}${url.includes("?") ? "&" : "?"}${query}`;
 }
 
+// ─── TRIAL ────────────────────────────────────────────────────
+
+/** Pro trial length when STRIPE_PRO_TRIAL_DAYS is unset. */
+export const DEFAULT_PRO_TRIAL_DAYS = 3;
+
+/**
+ * Days of free trial for a new Pro subscription. STRIPE_PRO_TRIAL_DAYS
+ * overrides the default; 0 turns the trial off. Stripe accepts 1–730.
+ */
+export function proTrialDays(): number {
+  const raw = process.env.STRIPE_PRO_TRIAL_DAYS?.trim();
+  if (!raw) return DEFAULT_PRO_TRIAL_DAYS;
+  const days = Number(raw);
+  if (!Number.isInteger(days) || days < 0 || days > 730) return DEFAULT_PRO_TRIAL_DAYS;
+  return days;
+}
+
+/**
+ * True if the user has ever had a subscription, in any status. Rows are
+ * never deleted (a cancellation only changes the status), so this is what
+ * stops cancel-and-resubscribe from earning a fresh trial each time.
+ */
+export async function hasEverSubscribed(userId: string): Promise<boolean> {
+  const { data, error } = await supabase()
+    .from("subscriptions")
+    .select("id")
+    .eq("user_id", userId)
+    .limit(1);
+  if (error) throw new Error(`Failed to read subscriptions: ${error.message}`);
+  return Array.isArray(data) && data.length > 0;
+}
+
 // ─── CREATE CHECKOUT SESSION ──────────────────────────────────
 
 export async function createCheckoutSession(params: {
@@ -147,7 +179,8 @@ export async function createCheckoutSession(params: {
     success_url: withQuery(successUrl, "session_id={CHECKOUT_SESSION_ID}"),
     cancel_url: cancelUrl,
     subscription_data: {
-      trial_period_days: trialDays,
+      // Stripe rejects 0, so no trial means leaving the field out.
+      ...(trialDays && trialDays > 0 ? { trial_period_days: trialDays } : {}),
       metadata: { supabase_user_id: userId },
     },
     metadata: { supabase_user_id: userId },

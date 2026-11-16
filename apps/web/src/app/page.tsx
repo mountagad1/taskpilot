@@ -518,7 +518,7 @@ export default function LandingPage() {
                 name="Pro"
                 amount={billing === 'monthly' ? <><sup>$</sup>39.99</> : <><sup>$</sup>31.99</>}
                 per={billing === 'monthly' ? 'per month, billed monthly' : 'per month · billed annually ($383.90/yr)'}
-                cta="Start 7-day trial"
+                cta="Start 3-day trial"
                 href={`/auth/signup?plan=pro&billing=${billing}`}
                 feats={[['Unlimited AI actions', 1], ['Advanced field mapping', 1], ['Full AI Sidebar', 1], ['Unlimited exports', 1], ['HubSpot + Notion', 1], ['Browser Actions', 1], ['Priority support', 1]]}
               />
