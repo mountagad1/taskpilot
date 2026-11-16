@@ -29,8 +29,12 @@ export { TaskPilotError } from "@taskpilot/api-client";
 export type { HttpClientOptions } from "@taskpilot/api-client";
 
 export interface TaskPilotOptions extends HttpClientOptions {
-  /** Reads TASKPILOT_API_KEY / TASKPILOT_BASE_URL when not supplied. */
+  /** API key or user access token. Reads TASKPILOT_API_KEY when not supplied. */
   apiKey?: string;
+  /**
+   * Reads TASKPILOT_BASE_URL when not supplied, else https://taskpilot.cc/api.
+   * Use http://localhost:4000 for a local API service. Omit the `/v1`.
+   */
   baseUrl?: string;
 }
 

@@ -14,7 +14,9 @@
 
 import { Hono } from "hono";
 
-import { getAdminClient, hasSupabaseCredentials } from "../lib/clients";
+// Session-creating calls (signUp, signInWithPassword, refreshSession) MUST use
+// createAuthClient(), never getAdminClient() — see createAuthClient's comment.
+import { createAuthClient, getAdminClient, hasSupabaseCredentials } from "../lib/clients";
 import { badRequest, notConfigured, ok, unauthorized, validationFailed } from "../lib/errors";
 import { guard, readJson } from "../middleware/kernel";
 
@@ -96,7 +98,7 @@ authRoutes.post("/signup", guard({ auth: false, rateLimit: 10 }), async (c) => {
   // then land on whatever it last configured instead of TaskPilot.
   const appOrigin = (process.env.PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 
-  const { data, error } = await getAdminClient().auth.signUp({
+  const { data, error } = await createAuthClient().auth.signUp({
     email,
     password,
     options: {
@@ -124,7 +126,7 @@ authRoutes.post("/login", guard({ auth: false, rateLimit: 20 }), async (c) => {
   const body = await readJson(c);
   const { email, password } = readCredentials(body, false);
 
-  const { data, error } = await getAdminClient().auth.signInWithPassword({ email, password });
+  const { data, error } = await createAuthClient().auth.signInWithPassword({ email, password });
 
   // Never distinguish "no such account" from "wrong password" — that turns
   // the login form into an account-enumeration oracle.
@@ -144,7 +146,7 @@ authRoutes.post("/refresh", guard({ auth: false, rateLimit: 60 }), async (c) => 
   const refreshToken = String(body.refresh_token ?? "");
   if (!refreshToken) throw badRequest("A refresh_token is required");
 
-  const { data, error } = await getAdminClient().auth.refreshSession({
+  const { data, error } = await createAuthClient().auth.refreshSession({
     refresh_token: refreshToken,
   });
 
@@ -176,19 +178,37 @@ authRoutes.post("/logout", guard({ rateLimit: 60 }), async (c) => {
 
 // ─── PASSWORD RESET ──────────────────────────────────────────
 
+/**
+ * Where the reset email's link lands. It carries a recovery access token in
+ * its URL hash, so it must only ever point at our own web app: a client
+ * value is honoured only if it is on PUBLIC_APP_URL's origin. Supabase's
+ * redirect allow-list is a second layer, not the only one.
+ */
+export function resetRedirectFor(requested: unknown): string {
+  const appOrigin = (process.env.PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+  const fallback = `${appOrigin}/auth/update-password`;
+  if (typeof requested !== "string" || !requested) return fallback;
+  try {
+    const url = new URL(requested);
+    return url.origin === new URL(appOrigin).origin ? url.toString() : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 authRoutes.post("/reset-password", guard({ auth: false, rateLimit: 10 }), async (c) => {
   assertConfigured();
 
   const body = await readJson(c);
   const email = String(body.email ?? "").trim().toLowerCase();
-  const redirectTo = typeof body.redirect_to === "string" ? body.redirect_to : undefined;
+  const redirectTo = resetRedirectFor(body.redirect_to);
 
   if (!EMAIL_RE.test(email)) {
     throw validationFailed([{ path: "email", message: "Enter a valid email address" }]);
   }
 
   try {
-    await getAdminClient().auth.resetPasswordForEmail(email, { redirectTo });
+    await createAuthClient().auth.resetPasswordForEmail(email, { redirectTo });
   } catch {
     // Swallow: whether the address exists must not be observable.
   }

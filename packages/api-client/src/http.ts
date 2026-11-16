@@ -46,9 +46,21 @@ export class TaskPilotError extends Error {
 }
 
 export interface HttpClientOptions {
-  /** Base URL of the TaskPilot API, e.g. https://taskpilot.cc */
+  /**
+   * Where the TaskPilot API is reachable, *without* the `/v1` segment — the
+   * client appends `/v1/...` itself. A path prefix is kept and trailing
+   * slashes are ignored.
+   *
+   *   production (default): https://taskpilot.cc/api
+   *   local API service:    http://localhost:4000
+   */
   baseUrl?: string;
-  /** Developer API key. Omit when relying on browser session cookies. */
+  /**
+   * Sent as `Authorization: Bearer <value>`: a developer API key
+   * (`tp_live_...`) or a signed-in user's access token from
+   * `POST /v1/auth/login`. The API has no cookie authentication, so without
+   * one only the public endpoints are reachable.
+   */
   apiKey?: string;
   /** Extra headers merged into every request. */
   headers?: Record<string, string>;
@@ -57,7 +69,12 @@ export interface HttpClientOptions {
   /** Retries for retryable failures. Default 2. */
   maxRetries?: number;
   fetchImpl?: typeof fetch;
-  /** Send cookies. Enabled automatically when no API key is supplied. */
+  /**
+   * Passed through to `fetch` when set. Unset by default: the API
+   * authenticates by Bearer token only and does not answer with
+   * `Access-Control-Allow-Credentials`, so `"include"` would only make
+   * cross-origin browser requests fail.
+   */
   credentials?: RequestCredentials;
 }
 
@@ -67,6 +84,12 @@ export interface RequestOptions {
   signal?: AbortSignal;
   /** Overrides the client default for this call. */
   timeoutMs?: number;
+  /**
+   * How to read a successful body. `auto` (default) unwraps the JSON
+   * envelope and falls back to text for non-JSON responses; `text` and
+   * `arrayBuffer` return the raw body untouched (file downloads).
+   */
+  responseType?: "auto" | "text" | "arrayBuffer";
 }
 
 export interface ListResponse<T> {
@@ -74,7 +97,19 @@ export interface ListResponse<T> {
   meta: { total: number; page?: number; per_page?: number; unread?: number };
 }
 
-const DEFAULT_BASE_URL = "https://taskpilot.cc";
+/**
+ * Production entry point. The web app proxies `/api/:path*` to the API
+ * service (apps/web/next.config.js), which mounts its routes under `/v1`.
+ */
+export const DEFAULT_BASE_URL = "https://taskpilot.cc/api";
+
+/**
+ * Trims trailing slashes, plus a trailing `/v1` — every path the client sends
+ * already starts with `/v1`, so a base that includes it would double it.
+ */
+export function normaliseBaseUrl(baseUrl: string): string {
+  return baseUrl.trim().replace(/\/+$/, "").replace(/\/v1$/, "");
+}
 
 export class HttpClient {
   private readonly baseUrl: string;
@@ -86,12 +121,13 @@ export class HttpClient {
   private readonly credentials?: RequestCredentials;
 
   constructor(options: HttpClientOptions = {}) {
-    this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+    // `||` rather than `??`: an empty TASKPILOT_BASE_URL means "unset".
+    this.baseUrl = normaliseBaseUrl(options.baseUrl || DEFAULT_BASE_URL);
     this.apiKey = options.apiKey;
     this.headers = options.headers ?? {};
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxRetries = options.maxRetries ?? 2;
-    this.credentials = options.credentials ?? (options.apiKey ? undefined : "include");
+    this.credentials = options.credentials;
 
     const impl = options.fetchImpl ?? globalThis.fetch;
     if (!impl) {
@@ -146,9 +182,16 @@ export class HttpClient {
         if (response.ok) {
           if (response.status === 204) return undefined as T;
 
+          if (options.responseType === "arrayBuffer") {
+            return (await response.arrayBuffer()) as unknown as T;
+          }
+          if (options.responseType === "text") {
+            return (await response.text()) as unknown as T;
+          }
+
           const contentType = response.headers.get("content-type") ?? "";
           if (!contentType.includes("application/json")) {
-            // File downloads (CSV, manifests) come back as text.
+            // Non-JSON bodies (e.g. CSV downloads) come back as text.
             return (await response.text()) as unknown as T;
           }
 
@@ -185,8 +228,13 @@ export class HttpClient {
     throw lastError ?? new TaskPilotError(0, "unknown_error", `Request to ${path} failed`);
   }
 
-  private buildUrl(path: string, query?: RequestOptions["query"]): string {
-    const url = new URL(path.startsWith("/") ? path : `/${path}`, this.baseUrl);
+  /**
+   * Joins by concatenation rather than `new URL(path, base)`: resolving an
+   * absolute path against the base would discard a path prefix such as the
+   * `/api` in https://taskpilot.cc/api.
+   */
+  buildUrl(path: string, query?: RequestOptions["query"]): string {
+    const url = new URL(`${this.baseUrl}/${path.replace(/^\/+/, "")}`);
 
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined && value !== null) url.searchParams.set(key, String(value));

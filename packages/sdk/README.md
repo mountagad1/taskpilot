@@ -41,13 +41,28 @@ manifest that builds locally is one the registry will accept.
 Create a key at **Dashboard → Developers**. Keys are shown once.
 
 ```ts
-new TaskPilot({ apiKey: 'tp_live_...' })          // explicit
-new TaskPilot()                                    // reads TASKPILOT_API_KEY
-new TaskPilot({ baseUrl: 'http://localhost:3000' }) // point at a local server
+new TaskPilot({ apiKey: 'tp_live_...' })           // explicit
+new TaskPilot()                                     // reads TASKPILOT_API_KEY / TASKPILOT_BASE_URL
+new TaskPilot({ baseUrl: 'http://localhost:4000' }) // point at a local API service
 ```
 
-In a browser where the user is already signed in, omit the key — the client
-sends session cookies instead.
+The credential is always sent as `Authorization: Bearer <token>`. The API has
+**no cookie authentication** — the client never sends cookies, so in a browser
+pass the signed-in user's access token (from `POST /v1/auth/login`) as
+`apiKey`. Without any token only public endpoints such as
+`marketplace().browse()` work. Key management (`keys()`) accepts a user access
+token only, never an API key.
+
+### Base URL
+
+| Environment | `baseUrl` |
+|---|---|
+| Production (default) | `https://taskpilot.cc/api` |
+| Local API service | `http://localhost:4000` |
+
+Give the base **without** `/v1` — the client appends `/v1/...` to every path,
+so `agents().list()` against the default calls
+`https://taskpilot.cc/api/v1/agents`. A trailing slash is fine.
 
 ### Scopes
 
@@ -151,8 +166,10 @@ plan allows.
 ## Running agents
 
 Runs are **planned on the server and executed in the user's browser**, so the
-backend never holds their session cookies. `start()` returns the plan; the
-extension carries it out and reports back.
+backend never holds their session cookies. `start()` returns the plan; an
+executor carries it out and reports back. The extension is that executor for
+runs it starts itself — for a run started from your script, executing the plan
+and calling `runs().reportStep()` / `runs().complete()` is up to you.
 
 ```ts
 const { run, plan } = await taskpilot.start({
@@ -226,8 +243,18 @@ Retries for `429` and `5xx` are automatic with backoff, honouring `Retry-After`.
 | `taskpilot.keys()` | `list` `create` `revoke` |
 | `taskpilot.notifications()` | `list` `markRead` |
 
+A few return shapes worth knowing:
+
+- `agents().manifest(id, version?)` → the parsed `AgentManifest` (from
+  `GET /v1/agents/{id}/manifest`).
+- `marketplace().checkout(agentId)` → `{ url }` for a paid agent (send the
+  buyer there) or `{ free: true }` (via `POST /v1/billing/checkout`).
+- `taskpilot.api.exports.create({ format, data })` → a `string` for `csv`,
+  parsed rows for `json`, an `ArrayBuffer` for `excel` (via `POST /v1/exports`).
+
 Need the raw HTTP layer? `taskpilot.api.http` is a `HttpClient` you can call
-directly, and `@taskpilot/api-client` is usable on its own.
+directly (paths start with `/v1`), and `@taskpilot/api-client` is usable on
+its own.
 
 ---
 
@@ -238,3 +265,16 @@ See [`examples/`](../../examples) for runnable scripts:
 - `publish-agent.ts` — author, validate and publish
 - `run-agent.ts` — start a run and stream its progress
 - `bulk-extract.ts` — fan an extraction agent across many URLs
+
+All three read `TASKPILOT_API_KEY` and, optionally, `TASKPILOT_BASE_URL`
+(e.g. `http://localhost:4000` for a local API).
+
+> **Runs do not execute on the server.** The API only plans a run and records
+> what an executor reports. The TaskPilot browser extension executes the runs
+> *it* starts from a live tab; it does not pick up runs created by a script.
+> So `run()` / `watch()` on a run your script started — as `run-agent.ts` and
+> `bulk-extract.ts` do — waits until it times out unless your own code carries
+> out the plan and reports back with `runs().reportStep()` /
+> `runs().complete()`. `bulk-extract.ts` also sends only a placeholder page
+> context per URL; nothing server-side fetches those pages. Treat it as a
+> pattern for concurrency and error handling, not a working scraper.

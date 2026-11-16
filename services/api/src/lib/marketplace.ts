@@ -48,9 +48,14 @@ export async function createAgentCheckout(params: {
   agentId: string
   buyerId: string
   buyerEmail: string
-  origin: string
+  /**
+   * The configured dashboard origin (billing.appOrigin()). Never pass a
+   * request-derived value such as the Origin header: the buyer is redirected
+   * here after paying, so a caller-chosen origin is an open redirect.
+   */
+  appOrigin: string
 }): Promise<{ free: true } | { url: string } | { error: string; status: number }> {
-  const { agentId, buyerId, buyerEmail, origin } = params
+  const { agentId, buyerId, buyerEmail, appOrigin } = params
 
   const { data: agent } = await admin()
     .from('marketplace_agents')
@@ -114,8 +119,8 @@ export async function createAgentCheckout(params: {
         quantity: 1,
       },
     ],
-    success_url: `${origin}/marketplace/${agent.slug}?purchased=1`,
-    cancel_url: `${origin}/marketplace/${agent.slug}?canceled=1`,
+    success_url: `${appOrigin}/marketplace/${agent.slug}?purchased=1`,
+    cancel_url: `${appOrigin}/marketplace/${agent.slug}?canceled=1`,
     metadata: {
       type: 'agent_purchase',
       agent_id: agent.id,
@@ -141,26 +146,45 @@ export async function createAgentCheckout(params: {
 }
 
 /**
- * Called from the Stripe webhook on checkout.session.completed when
- * metadata.type === 'agent_purchase'. Marks the pending purchase
- * completed (idempotent) and bumps the agent's sales counter.
+ * Called from the Stripe webhook on checkout.session.completed (and
+ * checkout.session.async_payment_succeeded) when metadata.type ===
+ * 'agent_purchase'. Marks the pending purchase completed and bumps the
+ * agent's sales counter: only once the session is actually paid, and only
+ * once per purchase, even under concurrent or repeated delivery.
  */
 export async function fulfillAgentPurchase(session: Stripe.Checkout.Session): Promise<void> {
   const agentId = session.metadata?.agent_id
   if (!agentId) return
 
-  const { data: purchase } = await admin()
+  // `checkout.session.completed` also fires for delayed payment methods whose
+  // funds have not arrived ('unpaid'). Granting then would hand the agent out
+  // for free if the payment later fails.
+  if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
+    console.warn(
+      `[Marketplace] Checkout ${session.id} completed with payment_status=${session.payment_status}; not fulfilled`
+    )
+    return
+  }
+
+  const { data: purchase, error: readError } = await admin()
     .from('agent_purchases')
     .select('id, agent_id, status')
     .eq('stripe_session_id', session.id)
     .maybeSingle()
+  if (readError) throw new Error(`Failed to read purchase: ${readError.message}`)
 
   if (!purchase || purchase.status === 'completed') return // idempotent
 
-  await admin()
+  // Conditional on still being pending, so two concurrent deliveries cannot
+  // both count the sale.
+  const { data: transitioned, error: updateError } = await admin()
     .from('agent_purchases')
     .update({ status: 'completed', completed_at: new Date().toISOString() })
     .eq('id', purchase.id)
+    .eq('status', 'pending')
+    .select('id')
+  if (updateError) throw new Error(`Failed to complete purchase: ${updateError.message}`)
+  if (!transitioned || transitioned.length === 0) return
 
   await admin().rpc('increment_agent_sales', { agent_uuid: purchase.agent_id })
 }

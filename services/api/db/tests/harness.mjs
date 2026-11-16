@@ -52,22 +52,34 @@ CREATE SCHEMA IF NOT EXISTS storage;
  * a superuser bypasses RLS unconditionally — FORCE ROW LEVEL SECURITY does
  * not change that. Testing policies therefore requires switching to a plain
  * role, exactly as production does.
+ *
+ * The grants mirror what Supabase actually configures: default privileges
+ * that hand ALL on every new table, view, sequence and function in `public`
+ * to anon, authenticated and service_role (the last with BYPASSRLS). They
+ * must be in place BEFORE the migrations run. A blanket GRANT afterwards
+ * would silently undo every REVOKE a migration performs (008 relies on
+ * those), and the tests would be checking a database production never has.
  */
 const ROLE_SHIM = `
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-    CREATE ROLE authenticated NOLOGIN;
+    CREATE ROLE authenticated NOLOGIN NOINHERIT;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-    CREATE ROLE anon NOLOGIN;
+    CREATE ROLE anon NOLOGIN NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS;
   END IF;
 END $$;
 
-GRANT USAGE ON SCHEMA public, auth TO authenticated, anon;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public, auth TO authenticated, anon;
+GRANT USAGE ON SCHEMA public, auth TO anon, authenticated, service_role;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA auth TO anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
 `
 
 export function migrationFiles() {
@@ -94,6 +106,8 @@ export async function createTestDatabase({ upTo } = {}) {
   await db.exec('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
   await db.exec('CREATE EXTENSION IF NOT EXISTS "pg_trgm";')
   await db.exec(AUTH_SHIM)
+  // Before the migrations, as on Supabase — see ROLE_SHIM.
+  await db.exec(ROLE_SHIM)
 
   const applied = []
   for (const file of migrationFiles()) {
@@ -103,9 +117,6 @@ export async function createTestDatabase({ upTo } = {}) {
     applied.push(file)
     if (upTo && file === upTo) break
   }
-
-  // Grants must come after the migrations so every table exists.
-  await db.exec(ROLE_SHIM)
 
   return Object.assign(db, {
     applied,
@@ -123,6 +134,21 @@ export async function createTestDatabase({ upTo } = {}) {
       } finally {
         await db.exec('RESET ROLE;')
         await db.query(`SELECT set_config('request.jwt.claim.sub', '', false)`)
+      }
+    },
+
+    /**
+     * Runs `fn` as the service role, which is what the API's service-role
+     * client becomes inside PostgREST: BYPASSRLS, and no `sub` claim, so
+     * auth.uid() is NULL.
+     */
+    async asServiceRole(fn) {
+      await db.exec('SET ROLE service_role;')
+      await db.query(`SELECT set_config('request.jwt.claim.sub', '', false)`)
+      try {
+        return await fn(db)
+      } finally {
+        await db.exec('RESET ROLE;')
       }
     },
 

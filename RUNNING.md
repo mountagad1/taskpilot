@@ -177,7 +177,7 @@ Pure Node — no `zip` binary needed, so it works the same on Windows and CI.
 ## 4. Testing
 
 ```bash
-pnpm test          # 289 tests across 14 files
+pnpm test          # 463 tests across 21 files
 pnpm type-check    # all 8 packages
 pnpm build         # production build of everything
 ```

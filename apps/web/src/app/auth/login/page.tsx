@@ -3,7 +3,7 @@
 import { Suspense, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { signIn, AuthError } from '@/lib/client/auth'
+import { signIn, safeRedirectPath, AuthError } from '@/lib/client/auth'
 import { notifyExtensionSignedIn } from '@/lib/extension-bridge'
 
 const inputStyle: React.CSSProperties = {
@@ -44,8 +44,8 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const redirectTo = searchParams.get('redirect') || '/dashboard'
   const justConfirmed = searchParams.get('confirmed') === '1'
+  const justReset = searchParams.get('reset') === '1'
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -63,7 +63,9 @@ function LoginForm() {
         plan: session.user.plan,
       })
 
-      router.push(redirectTo)
+      // Only ever follow a same-origin path: an unchecked ?redirect= would
+      // send a freshly signed-in user to any site the link's author chose.
+      router.push(safeRedirectPath(searchParams.get('redirect')))
       router.refresh()
     } catch (err) {
       setError(err instanceof AuthError ? err.message : 'Could not sign you in')
@@ -103,6 +105,23 @@ function LoginForm() {
           }}
         >
           Email confirmed. Sign in to continue.
+        </p>
+      )}
+
+      {justReset && (
+        <p
+          role="status"
+          style={{
+            fontSize: 13,
+            color: '#6ee7a8',
+            background: 'rgba(34,197,94,0.1)',
+            border: '1px solid rgba(34,197,94,0.25)',
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 12px',
+            marginBottom: 20,
+          }}
+        >
+          Password updated. Sign in with your new password.
         </p>
       )}
 

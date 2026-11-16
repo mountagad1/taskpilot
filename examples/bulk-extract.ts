@@ -3,9 +3,22 @@
  *
  *   TASKPILOT_API_KEY=tp_live_... npx tsx examples/bulk-extract.ts urls.txt
  *
+ * Talks to https://taskpilot.cc/api by default; set
+ * TASKPILOT_BASE_URL=http://localhost:4000 to use a local API service.
+ *
  * Shows the pattern that matters for batch work: cap concurrency so the API
  * rate limit is never the thing that fails the job, and treat a per-URL
  * failure as data rather than an exception that aborts the batch.
+ *
+ * IMPORTANT — this will not extract anything on its own. The server only
+ * *plans* runs; it never opens a page or executes steps. Execution happens in
+ * the TaskPilot browser extension, and only for runs the extension starts from
+ * a live tab — it does not pick up runs created here. Each `taskpilot.run()`
+ * below therefore waits for a result nobody produces and ends with
+ * `watch_timeout`, reported as a per-URL failure. The page context sent per
+ * URL is also only a placeholder (empty title and text): nothing fetches the
+ * page. To make this real, execute each returned plan yourself and report it
+ * with `runs().reportStep()` / `runs().complete()`.
  */
 
 import { readFileSync } from 'node:fs'

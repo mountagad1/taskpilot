@@ -37,6 +37,7 @@ import {
   isRecord,
   type ValidationResult,
 } from "./validate";
+import { withPlatformConfirm } from "./confirmation";
 
 // Ceilings a published manifest may not exceed, whatever it declares.
 // A seller cannot buy themselves a bigger budget on the buyer's account.
@@ -273,10 +274,14 @@ function parseHarness(raw: unknown, path: string, v: Validator): AgentHarness {
       ),
       enabled: memoryRaw.enabled !== false,
     },
-    require_confirmation: parseCapabilities(
-      raw.require_confirmation ?? DEFAULT_HARNESS.require_confirmation,
-      `${path}.require_confirmation`,
-      v
+    // The author may add actions to confirm, never remove the platform
+    // minimum: `require_confirmation: []` must not silence navigate/download.
+    require_confirmation: withPlatformConfirm(
+      parseCapabilities(
+        raw.require_confirmation ?? DEFAULT_HARNESS.require_confirmation,
+        `${path}.require_confirmation`,
+        v
+      )
     ),
   };
 }

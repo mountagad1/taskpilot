@@ -20,6 +20,7 @@ import {
   capabilitiesForPlan,
   gateCapabilities,
   type RunStatus,
+  withPlatformConfirm,
 } from "@taskpilot/shared";
 import { Planner, providerRouterFromEnv } from "../runtime";
 
@@ -77,7 +78,7 @@ export function sanitisePageContext(raw: unknown): PageContext {
 // ─── USAGE ───────────────────────────────────────────────────
 
 /** Monthly action allowance. Unlimited plans use -1. */
-export async function assertWithinPlanLimits(caller: Caller): Promise<void> {
+export async function assertWithinPlanLimits(caller: Pick<Caller, "userId" | "plan">): Promise<void> {
   const limit = PLAN_LIMITS[caller.plan]?.ai_actions_limit ?? 0;
   if (limit < 0) return;
 
@@ -160,7 +161,11 @@ export async function createRun(caller: Caller, input: CreateRunInput): Promise<
       max_steps: Math.min(resolved.manifest.harness.max_steps, DEFAULT_RUN_LIMITS.max_steps * 4),
       token_budget: resolved.manifest.harness.token_budget_per_run,
       timeout_ms: resolved.manifest.harness.timeout_ms,
-      confirm: resolved.manifest.harness.require_confirmation,
+      // Manifest may add to the platform minimum, never shrink it.
+      confirm: withPlatformConfirm([
+        ...DEFAULT_RUN_LIMITS.confirm,
+        ...resolved.manifest.harness.require_confirmation,
+      ]),
     };
   }
 
@@ -259,7 +264,12 @@ export async function createRun(caller: Caller, input: CreateRunInput): Promise<
   return { run, plan, limits };
 }
 
-async function resolveAgentForRun(caller: Caller, agentId: string) {
+/**
+ * Loads an agent the caller may run — owned, or installed and enabled — on a
+ * plan that meets its minimum, with its current manifest re-validated.
+ * Throws otherwise. Also used to vet `agent_id` on saved workflows.
+ */
+export async function resolveAgentForRun(caller: Pick<Caller, "userId" | "plan">, agentId: string) {
   const admin = getAdminClient();
 
   const { data: agent } = await admin

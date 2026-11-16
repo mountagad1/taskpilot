@@ -3,9 +3,13 @@
  *
  *   TASKPILOT_API_KEY=tp_live_... AGENT_ID=... npx tsx examples/run-agent.ts
  *
+ * Talks to https://taskpilot.cc/api by default; set
+ * TASKPILOT_BASE_URL=http://localhost:4000 to use a local API service.
+ *
  * Runs execute in the user's browser, so this script starts the run and then
- * polls. If nothing is executing the plan, it will time out — that is the
- * honest behaviour, not a bug.
+ * polls. The extension only executes runs it starts itself, not this one, so
+ * unless something executes the plan and reports back it will time out — that
+ * is the honest behaviour, not a bug. Set DRY_RUN=true to stop after the plan.
  */
 
 import { TaskPilot, TaskPilotError } from '@taskpilot/sdk'

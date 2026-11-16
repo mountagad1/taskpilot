@@ -3,6 +3,9 @@
  *
  *   TASKPILOT_API_KEY=tp_live_... npx tsx examples/publish-agent.ts
  *
+ * Talks to https://taskpilot.cc/api by default; set
+ * TASKPILOT_BASE_URL=http://localhost:4000 to use a local API service.
+ *
  * Re-running is safe: pass the printed agent id back as AGENT_ID and the
  * script publishes a new version of the same listing instead of creating a
  * duplicate.

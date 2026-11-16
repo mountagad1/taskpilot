@@ -14,6 +14,7 @@
 import {
   DEFAULT_RUN_LIMITS,
   MUTATING_ACTIONS,
+  needsConfirmation,
   newId,
   type ActionDispatcher,
   type ActionPlan,
@@ -252,7 +253,7 @@ export class AgentRuntime {
       }
 
       // Guard: confirmation for anything destructive or navigational.
-      if (this.requiresConfirmation(step.action.type) && attempt === 1) {
+      if (this.requiresConfirmation(step.action) && attempt === 1) {
         const approved = this.confirm ? await this.confirm(step) : false;
         if (!approved) {
           pendingConfirmation = step;
@@ -419,8 +420,13 @@ export class AgentRuntime {
     return finish("completed", plan);
   }
 
-  private requiresConfirmation(action: BrowserActionType): boolean {
-    return this.limits.confirm.includes(action) && MUTATING_ACTIONS.includes(action);
+  /**
+   * The platform minimum (PLATFORM_CONFIRM) always applies, as does a URL
+   * built from run data; `limits.confirm` can only add mutating actions.
+   */
+  private requiresConfirmation(action: PlanStep["action"]): boolean {
+    const listed = this.limits.confirm.filter((a) => MUTATING_ACTIONS.includes(a));
+    return needsConfirmation(action, listed);
   }
 }
 
